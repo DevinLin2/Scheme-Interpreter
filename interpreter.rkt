@@ -35,6 +35,11 @@
 
 (define else caddr)
 
+; rest_of_state_layer: this is a helper function that takes a state layer (for example: ((a b c) (1 2 3))) and returns the state without the first binding pairs e.g. ((b c) (2 3))
+(define rest_of_state_layer
+  (lambda (state_layer)
+    (list (rest_of_elements (first_element state_layer)) (rest_of_elements (second_element state_layer)))))
+
 ; interpret: takes a filename and calls the heavylifting interpret function with the parse tree
 (define interpret
   (lambda (filename)
@@ -56,7 +61,7 @@
 (define M_state_declare
   (lambda (syntax state)
     (cond
-      ((M_state_lookup (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
+      ((M_value_exists (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
       ((null? (rightoperand_list syntax)) (cons (M_state_variable_declare (leftoperand syntax) (top_layer state)) (rest_of_elements state)))
       ((or (boolean? (rightoperand syntax)) (number? (rightoperand syntax))) (cons (M_state_variable_declare (list (leftoperand syntax) (rightoperand syntax)) (top_layer state)) (rest_of_elements state)))
       (else (cons (M_state_variable_declare (list (leftoperand syntax) (M_value_expression (rightoperand syntax) state)) (top_layer state)) (rest_of_elements state))))))
@@ -66,7 +71,7 @@
   (lambda (syntax state original_state return)
     (cond
       ((null? state) (error "an element used has not been declared"))
-      ((M_state_lookup (leftoperand syntax) (top_layer_var_list state)) (return (cons (M_state_assignment_helper syntax (first_element state) original_state (lambda (v) v)) (rest_of_elements state))))
+      ((M_value_exists (leftoperand syntax) (top_layer_var_list state)) (return (cons (M_state_assignment_helper syntax (first_element state) original_state (lambda (v) v)) (rest_of_elements state))))
       (else (M_state_assignment syntax (rest_of_elements state) original_state (lambda (v) (return (cons (first_element state) v))))))))
 
 ; M_state_assignment_helper: this is called when the variable is found in the state (in any layer). This function will return a state with the new binding for the given variable.
@@ -77,10 +82,6 @@
       ((and (eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (not (pair? (rightoperand syntax)))) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_lookup (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
       ((eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_expression (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
       (else (M_state_assignment_helper syntax (rest_of_state_layer state_layer) original_state (lambda (v) (return (list (cons (first_element_in_var_list state_layer) (first_element v)) (cons (first_element_in_value_list state_layer) (second_element v))))))))))
-
-(define rest_of_state_layer
-  (lambda (state_layer)
-    (list (rest_of_elements (first_element state_layer)) (rest_of_elements (second_element state_layer)))))
 
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
@@ -211,13 +212,13 @@
       ((eq? operator '%) (remainder expression1 expression2))
       (else (error "invalid/unknown syntax")))))
 
-; lookup: takes an element and a list of variables and checks if the element is in the list
-(define M_state_lookup
+; value_exists: takes an element and a list of variables and checks if the element is in the list
+(define M_value_exists
   (lambda (elem var_list)
     (cond
       ((null? var_list) #f)
       ((eq? (first_element var_list) elem) #t)
-      (else (M_state_lookup elem (rest_of_elements var_list))))))
+      (else (M_value_exists elem (rest_of_elements var_list))))))
 
 ; M_state_variable_declare: takes an element and an optional value and adds it to the top layer state
 (define M_state_variable_declare
