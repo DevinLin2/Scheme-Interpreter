@@ -63,7 +63,7 @@
   (lambda (syntax state original_state)
     (cond
       ((null? state) (error "an element used has not been declared"))
-      ((and (eq? (leftoperand syntax) (caar state)) (or (number? (rightoperand syntax)) (boolean? (rightoperand syntax)))) (cons (cdr syntax) (cdr state)))
+      ((and (eq? (leftoperand syntax) (caar state)) (or (number? (rightoperand syntax)) (or (eq? (rightoperand syntax) 'true) (eq? (rightoperand syntax) 'false)))) (cons (cdr syntax) (cdr state)))
       ((and (eq? (leftoperand syntax) (caar state)) (not (pair? (rightoperand syntax)))) (cons (list (leftoperand syntax) (M_state_lookup_value (rightoperand syntax) original_state)) (cdr state)))
       ((eq? (leftoperand syntax) (caar state)) (cons (list (leftoperand syntax) (M_value_expression (rightoperand syntax) original_state)) (cdr state)))
       (else (cons (car state) (M_state_assignment syntax (cdr state) original_state))))))
@@ -85,6 +85,7 @@
     (cond
       ((null? syntax) state)
       ((list? (car syntax)) (M_state_then (cdr syntax) (M_state_then (car syntax) state)))
+      ((eq? (operator syntax) 'if) (M_state_if (cdr syntax) state))
       ((eq? (operator syntax) '=) (M_state_assignment syntax state state))
       ((eq? (operator syntax) 'var) (M_state_declare syntax state))
       ((eq? (operator syntax) 'return) (M_state_return syntax state))
@@ -167,32 +168,33 @@
 
 ; M_value_conditional_expression: evaluates a conditional expression
 (define M_value_conditional_expression
-  (lambda (operator statement1 statement2)
+  (lambda (operator expression1 expression2)
     (cond
-      ((or (and (number? statement1) (boolean? statement2)) (and (number? statement2) (boolean? statement1))) (error "type mismatch"))
-      ((and (eq? operator '!) (not (boolean? statement1))) (error "invalid type for ! operator"))
-      ((and (or (eq? operator '&&) (eq? operator '||)) (not (and (boolean? statement1) (boolean? statement2)))) (error "invalid type for operator"))
-      ((eq? operator '!) (not statement1))
-      ((eq? operator '==) (eq? statement1 statement2))
-      ((eq? operator '!=) (not (eq? statement1 statement2)))
-      ((eq? operator '<) (< statement1 statement2)) ; this should only be used to compare numbers or strings but scheme already crashes if there is an invalid type
-      ((eq? operator '>) (> statement1 statement2))
-      ((eq? operator '<=) (<= statement1 statement2))
-      ((eq? operator '>=) (>= statement1 statement2))
-      ((eq? operator '&&) (and statement1 statement2))
-      ((eq? operator '||) (or statement1 statement2))
+      ((or (and (number? expression1) (boolean? expression2)) (and (number? expression2) (boolean? expression1))) (error "type mismatch"))
+      ((and (eq? operator '!) (not (boolean? expression1))) (error "invalid type for ! operator"))
+      ((and (or (eq? operator '&&) (eq? operator '||)) (not (and (boolean? expression1) (boolean? expression2)))) (error "invalid type for operator"))
+      ((eq? operator '!) (not expression1))
+      ((eq? operator '==) (eq? expression1 expression2))
+      ((eq? operator '!=) (not (eq? expression1 expression2)))
+      ((eq? operator '<) (< expression1 expression2)) ; this should only be used to compare numbers or strings but scheme already crashes if there is an invalid type
+      ((eq? operator '>) (> expression1 expression2))
+      ((eq? operator '<=) (<= expression1 expression2))
+      ((eq? operator '>=) (>= expression1 expression2))
+      ((eq? operator '&&) (and expression1 expression2))
+      ((eq? operator '||) (or expression1 expression2))
       (else (error "invalid/unknown syntax")))))
 
 ; M_value_arithmetic_expression: evaluates an arithmetic expression
 (define M_value_arithmetic_expression
-  (lambda (operator statement1 statement2)
+  (lambda (operator expression1 expression2)
     (cond
-      ((not (and (number? statement1) (number? statement2))) (error "invalid types for arithmetic operator"))
-      ((eq? operator '+) (+ statement1 statement2))
-      ((eq? operator '-) (- statement1 statement2))
-      ((eq? operator '*) (* statement1 statement2))
-      ((eq? operator '/) (exact-floor (/ statement1 statement2))) ; used exact-floor to make this integer division
-      ((eq? operator '%) (remainder statement1 statement2))
+      ((not (and (number? expression1) (number? expression2))) (error "invalid types for arithmetic operator"))
+      ((eq? operator '+) (+ expression1 expression2))
+      ((eq? operator '-) (- expression1 expression2))
+      ((eq? operator '*) (* expression1 expression2))
+      ((and (eq? operator '/) (< (/ expression1 expression2) 0)) (exact-ceiling (/ expression1 expression2)))
+      ((eq? operator '/) (exact-floor (/ expression1 expression2))) ; used exact-floor to make this integer division
+      ((eq? operator '%) (remainder expression1 expression2))
       (else (error "invalid/unknown syntax")))))
 
 ; lookup_declare: takes an element and a state and checks if the element is in the state
