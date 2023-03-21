@@ -1,0 +1,4 @@
+var x; 
+var y;
+y = true;
+x = 23;
