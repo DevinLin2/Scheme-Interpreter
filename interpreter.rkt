@@ -17,6 +17,10 @@
 
 (define first_element car)
 
+(define first_element_in_var_list caar)
+
+(define first_element_in_value_list caadr)
+
 (define second_element cadr)
 
 (define rest_of_elements cdr)
@@ -24,7 +28,6 @@
 (define top_layer car)
 
 (define top_layer_var_list caar)
-
 
 (define condition car)
 
@@ -53,20 +56,31 @@
 (define M_state_declare
   (lambda (syntax state)
     (cond
-      ((M_state_lookup_declare (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
+      ((M_state_lookup (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
       ((null? (rightoperand_list syntax)) (cons (M_state_variable_declare (leftoperand syntax) (top_layer state)) (rest_of_elements state)))
       ((or (boolean? (rightoperand syntax)) (number? (rightoperand syntax))) (cons (M_state_variable_declare (list (leftoperand syntax) (rightoperand syntax)) (top_layer state)) (rest_of_elements state)))
       (else (cons (M_state_variable_declare (list (leftoperand syntax) (M_value_expression (rightoperand syntax) state)) (top_layer state)) (rest_of_elements state))))))
 
-; M_state_assignment: called when assigning a value to a variable. Checks if the variable has been declared. If it has, delete its old entry (variable) from state and add a new entry of (variable value) to the state.
+; M_state_assignment: called when assigning a value to a variable. Checks if the variable has been declared starting from the top most state layer and working down. If it has, replace its binding with the new value.
 (define M_state_assignment
-  (lambda (syntax state original_state)
+  (lambda (syntax state original_state return)
     (cond
       ((null? state) (error "an element used has not been declared"))
-      ((and (eq? (leftoperand syntax) (caar state)) (or (number? (rightoperand syntax)) (or (eq? (rightoperand syntax) 'true) (eq? (rightoperand syntax) 'false)))) (cons (cdr syntax) (cdr state)))
-      ((and (eq? (leftoperand syntax) (caar state)) (not (pair? (rightoperand syntax)))) (cons (list (leftoperand syntax) (M_state_lookup_value (rightoperand syntax) original_state)) (cdr state)))
-      ((eq? (leftoperand syntax) (caar state)) (cons (list (leftoperand syntax) (M_value_expression (rightoperand syntax) original_state)) (cdr state)))
-      (else (cons (car state) (M_state_assignment syntax (cdr state) original_state))))))
+      ((M_state_lookup (leftoperand syntax) (top_layer_var_list state)) (return (cons (M_state_assignment_helper syntax (first_element state) original_state (lambda (v) v)) (rest_of_elements state))))
+      (else (M_state_assignment syntax (rest_of_elements state) original_state (lambda (v) (return (cons (first_element state) v))))))))
+
+; M_state_assignment_helper: this is called when the variable is found in the state (in any layer). This function will return a state with the new binding for the given variable.
+(define M_state_assignment_helper
+  (lambda (syntax state_layer original_state return)
+    (cond
+      ((and (eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (or (number? (rightoperand syntax)) (or (eq? (rightoperand syntax) 'true) (eq? (rightoperand syntax) 'false)))) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (rightoperand syntax) (rest_of_elements (second_element state_layer))))))
+      ((and (eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (not (pair? (rightoperand syntax)))) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_lookup (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
+      ((eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_expression (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
+      (else (M_state_assignment_helper syntax (rest_of_state_layer state_layer) original_state (lambda (v) (return (list (cons (first_element_in_var_list state_layer) (first_element v)) (cons (first_element_in_value_list state_layer) (second_element v))))))))))
+
+(define rest_of_state_layer
+  (lambda (state_layer)
+    (list (rest_of_elements (first_element state_layer)) (rest_of_elements (second_element state_layer)))))
 
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
@@ -134,7 +148,7 @@
       ((number? (cdr syntax)) (cdr syntax))
       ((eq? (cdr syntax) #t) "true")
       ((eq? (cdr syntax) #f) "false")
-      ((not (pair? (cdr syntax))) (M_state_lookup_value (leftoperand syntax)))
+      ((not (pair? (cdr syntax))) (M_value_lookup (leftoperand syntax)))
       (else (M_state_return (cons (car syntax) (M_value_expression (leftoperand syntax) state)) state)))))
 
 ;____________________________________________
@@ -148,7 +162,7 @@
       ((eq? syntax 'true) #t)
       ((eq? syntax 'false) #f)
       ((or (number? syntax) (boolean? syntax) (string? syntax)) syntax)
-      ((not (pair? syntax)) (M_state_lookup_value syntax state))
+      ((not (pair? syntax)) (M_value_lookup syntax state))
       ((and (list? syntax) (eq? (operator syntax) '!)) (M_value_conditional_expression '! (M_value_expression (leftoperand syntax) state) '()))
       ((and (list? syntax) (eq? (operator syntax) '+))(M_value_arithmetic_expression '+ (M_value_expression (leftoperand syntax) state) (M_value_expression (rightoperand syntax) state)))
       ((and (list? syntax) (eq? (operator syntax) '-) (null? (cddr syntax))) (M_value_arithmetic_expression '* -1 (M_value_expression (leftoperand syntax) state)))
@@ -197,29 +211,29 @@
       ((eq? operator '%) (remainder expression1 expression2))
       (else (error "invalid/unknown syntax")))))
 
-; lookup_declare: takes an element and a state and checks if the element is in the state
-(define M_state_lookup_declare
+; lookup: takes an element and a list of variables and checks if the element is in the list
+(define M_state_lookup
   (lambda (elem var_list)
     (cond
       ((null? var_list) #f)
       ((eq? (first_element var_list) elem) #t)
-      (else (M_state_lookup_declare elem (rest_of_elements var_list))))))
+      (else (M_state_lookup elem (rest_of_elements var_list))))))
 
 ; M_state_variable_declare: takes an element and an optional value and adds it to the top layer state
 (define M_state_variable_declare
   (lambda (elem top_layer_state)
     (cond
       ((list? elem) (list (cons (first_element elem) (first_element top_layer_state)) (cons (second_element elem) (second_element top_layer_state))))
-      (else (list (cons elem (first_element top_layer_state)) (cons '$ (second_element top_layer_state)))))))
+      (else (list (cons elem (first_element top_layer_state)) (cons 'null (second_element top_layer_state)))))))
     
 
 ; lookup_value: takes an element and a state and checks if the element is in the state, returns the value of the element
-(define M_state_lookup_value
+(define M_value_lookup
   (lambda (elem state)
     (cond
       ((null? state) (error "an element used has not been declared"))
       ((and (eq? (caar state) elem) (null? (cdar state))) (error "an element used has not been assigned a value"))
       ((eq? (caar state) elem) (cadar state))
-      (else (M_state_lookup_value elem (cdr state))))))
+      (else (M_value_lookup elem (cdr state))))))
 
 
