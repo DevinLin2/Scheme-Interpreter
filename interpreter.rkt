@@ -69,13 +69,13 @@
 (define interpret2
   (lambda (PT state)
     (cond
-      ((and (null? PT) (list? state)) '())
+      ;((and (null? PT) (list? state)) '())
       ((null? PT) state)
       ((eq? (caar PT) 'return) (M_state_return (car PT) state))
       ((eq? (caar PT) 'var) (interpret2 (cdr PT) (M_state_declare (car PT) state)))
       ((eq? (caar PT) 'if) (interpret2 (cdr PT) (M_state_if (cdar PT) state)))
       ((eq? (caar PT) 'while) (interpret2 (cdr PT) (M_state_while (cdar PT) state)))
-      (else (interpret2 (cdr PT) (M_state_assignment (car PT) state state))))))
+      (else (interpret2 (cdr PT) (M_state_assignment (car PT) state state (lambda (v) v)))))))
 
 ; M_state_declare: called when declaring a variable. Checks the top layer if variable is already declared. If not it adds the variable and the optional value to the state.
 (define M_state_declare
@@ -175,6 +175,25 @@
       ((eq? (cdr syntax) #f) "false")
       ((not (pair? (cdr syntax))) (M_value_lookup (leftoperand syntax)))
       (else (M_state_return (cons (car syntax) (M_value_expression (leftoperand syntax) state)) state)))))
+
+; M_state_block: called when begin is encountered. executes a block of code. *SYNTAX DOES NOT INCLUDE BEGIN*
+
+
+(define M_state_block
+  (lambda (syntax state return)
+    (cond
+      ((null? syntax) (return state))
+      (else (M_state_block_helper syntax (cons '(()()) (list (car state))) (lambda (v) v))))))
+
+(define M_state_block_helper
+  (lambda (syntax state return)
+    (cond
+      ((null? syntax) (return (cdr state)))
+      ((eq? (caar syntax) 'var) (M_state_block_helper (cdr syntax) (M_state_declare (car syntax) state) (lambda (v) (return  v))))
+      ((eq? (caar syntax) 'if) (M_state_block_helper (cdr syntax) (M_state_if (cdar syntax) state) (lambda (v) (return v))))
+      ((eq? (caar syntax) 'while) (M_state_block_helper (cdr syntax) (M_state_while (cdar syntax) state) (lambda (v) (return v))))
+      (else (M_state_block_helper (cdr syntax) (M_state_assignment (car syntax) state state (lambda (v) v)) (lambda (v1) v1))))))
+
 
 ;____________________________________________
 ;HELPER METHODS
