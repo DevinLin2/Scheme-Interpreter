@@ -79,7 +79,7 @@
 
 ; M_state_declare: called when declaring a variable. Checks the top layer if variable is already declared. If not it adds the variable and the optional value to the state.
 (define M_state_declare
-  (lambda (syntax state return)
+  (lambda (syntax state)
     (cond
       ((M_value_exists (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
       ((null? (rightoperand_list syntax)) (cons (M_state_variable_declare (leftoperand syntax) (top_layer state)) (rest_of_elements state)))
