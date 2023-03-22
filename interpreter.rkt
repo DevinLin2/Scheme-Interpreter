@@ -75,7 +75,7 @@
       ((eq? (caar PT) 'var) (interpret2 (cdr PT) (M_state_declare (car PT) state)))
       ((eq? (caar PT) 'if) (interpret2 (cdr PT) (M_state_if (cdar PT) state)))
       ((eq? (caar PT) 'while) (interpret2 (cdr PT) (M_state_while (cdar PT) state)))
-      (else (interpret2 (cdr PT) (M_state_assignment (car PT) state state))))))
+      (else (interpret2 (cdr PT) (M_state_assignment (car PT) state state (lambda (v) v)))))))
 
 ; M_state_declare: called when declaring a variable. Checks the top layer if variable is already declared. If not it adds the variable and the optional value to the state.
 (define M_state_declare
@@ -106,26 +106,26 @@
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
 (define M_state_if
-  (lambda (syntax state)
+  (lambda (syntax state return)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
-      ((M_value_expression (condition syntax) state) (M_state_then (rest_of_elements (then syntax)) (add_state_layer state)))
-      ((not (null? (else_check syntax))) (M_state_else (rest_of_elements (else syntax)) (add_state_layer state)))
-      (else state))))
+      ((M_value_expression (condition syntax) state) (M_state_then (list (then syntax)) (add_state_layer state) return)) ;<-- instead of (list (then syntax)) i think a new function for code blocks is helpful
+      ((not (null? (else_check syntax))) (M_state_else (else syntax) (add_state_layer state)))
+      (else (return state)))))
 
 ; M_state_then: called by M_state_if when the conditional is true. Checks if the then statement is a list of statememts.
 ;               If it is, function recursively calls itself to parse the list. Otherwise, function calls the respective M_state functions depending on the operation in syntax.
 ;***** make sure to check for code blocks with begin here ***************
 (define M_state_then
-  (lambda (syntax state)
+  (lambda (syntax state return)
     (cond
-      ((null? syntax) (remove_state_layer state))
-      ((not (null? (multiline_body_check syntax))) (M_state_then (rest_of_elements syntax) (M_state_then (first_element syntax) state)))
-      ((eq? (block_operator syntax) 'if) (M_state_if (conditional_syntax_format syntax) state))
-      ((eq? (block_operator syntax) '=) (M_state_assignment (first_element syntax) state state (lambda (v) v)))
-      ((eq? (block_operator syntax) 'var) (M_state_declare (first_element syntax) state (lambda (v) v)))
-      ((eq? (block_operator syntax) 'return) (M_state_return (first_element syntax) state))
-      (else state))))
+      ((null? syntax) (return (remove_state_layer state)))
+      ((not (null? (multiline_body_check syntax))) (M_state_then (rest_of_elements syntax) (M_state_then (first_element syntax) state (lambda (v) v)) return))
+      ((eq? (block_operator syntax) 'if) (M_state_then (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state (lambda (v) v)) return))
+      ((eq? (block_operator syntax) '=) (M_state_then (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state (lambda (v) v)) return))
+      ((eq? (block_operator syntax) 'var) (M_state_then (rest_of_elements syntax) (M_state_declare (first_element syntax) state (lambda (v) v)) return))
+      ((eq? (block_operator syntax) 'return) (M_state_then (rest_of_elements syntax) (M_state_return (first_element syntax) state) return))
+      (else (return state)))))
 
 ; M_state_else: called by M_state_if when the conditional is false. Checks if the else statement is a list of statememts.
 ;               If it is, function recursively calls itself to parse the list. Otherwise, function calls the respective M_state functions depending on the operation in syntax.
