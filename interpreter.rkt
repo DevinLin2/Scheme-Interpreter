@@ -108,62 +108,37 @@
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
 (define M_state_if
-  (lambda (syntax state)
+  (lambda (syntax state return)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
-      ((M_value_expression (condition syntax) state) (M_state_then (rest_of_elements (then syntax)) (add_state_layer state)))
-      ((not (null? (else_check syntax))) (M_state_else (rest_of_elements (else syntax)) (add_state_layer state)))
-      (else state))))
+      ((M_value_expression (condition syntax) state) (return (M_state_then (rest_of_elements (then syntax)) state return)))
+      ((not (null? (else_check syntax))) (return (M_state_else (rest_of_elements (else syntax)) state return)))
+      (else (return state)))))
 
-; M_state_then: called by M_state_if when the conditional is true. Checks if the then statement is a list of statememts.
-;               If it is, function recursively calls itself to parse the list. Otherwise, function calls the respective M_state functions depending on the operation in syntax.
-;***** make sure to check for code blocks with begin here ***************
+; M_state_then: called by M_state_if when the conditional is true. This is now just a code block and we can handle that simply by calling M_state_block.
 (define M_state_then
-  (lambda (syntax state)
-    (cond
-      ((null? syntax) (remove_state_layer state))
-      ((not (null? (multiline_body_check syntax))) (M_state_then (rest_of_elements syntax) (M_state_then (first_element syntax) state)))
-      ((eq? (block_operator syntax) 'if) (M_state_if (conditional_syntax_format syntax) state))
-      ((eq? (block_operator syntax) '=) (M_state_assignment (first_element syntax) state state (lambda (v) v)))
-      ((eq? (block_operator syntax) 'var) (M_state_declare (first_element syntax) state (lambda (v) v)))
-      ((eq? (block_operator syntax) 'return) (M_state_return (first_element syntax) state))
-      (else state))))
+  (lambda (syntax state return)
+    (M_state_block syntax state return)))
 
-; M_state_else: called by M_state_if when the conditional is false. Checks if the else statement is a list of statememts.
-;               If it is, function recursively calls itself to parse the list. Otherwise, function calls the respective M_state functions depending on the operation in syntax.
-;               Note that the operation could be another 'if' denoting an 'else if' operation. This is handled the same way as the other operations.
-; this could be combined with M_state_then to be one function but for semantic purposes this makes more sense
+; M_state_else: called by M_state_if when the conditional is false. This is now also just a code block and we can handle that simply by calling M_state_block.
+;               this could be combined with M_state_then to be one function but for semantic purposes this makes more sense
 (define M_state_else
-  (lambda (syntax state)
-    (cond
-      ((null? syntax) state)
-      ((list? (car syntax)) (M_state_else (cdr syntax) (M_state_else (car syntax) state)))
-      ((eq? (operator syntax) 'if) (M_state_if (cdar syntax) state))
-      ((eq? (operator syntax) '=) (M_state_assignment syntax state state))
-      ((eq? (operator syntax) 'var) (M_state_declare syntax state))
-      ((eq? (operator syntax) 'return) (M_state_return syntax state))
-      (else state))))
+  (lambda (syntax state return)
+    (M_state_block syntax state return)))
 
 ; M_state_while: called when performing a while operation. Checks if the condition evaluates to a boolean.
 ;                If the condition is true, recursively call M_state_while passing in the new state after evaluating the body with M_state_while_body. Otherwise exit the function and return the current state.
 (define M_state_while
-  (lambda (syntax state)
+  (lambda (syntax state return)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) error "invalid conditional")
-      ((M_value_expression (condition syntax) state) (M_state_while syntax (M_state_while_body (leftoperand syntax) state)))
-      (else state))))
+      ((M_value_expression (condition syntax) state) (M_state_while syntax (M_state_while_body (rest_of_elements (leftoperand syntax)) state return) return))
+      (else (return state)))))
 
 ; M_state_while_body: called by M_state_while when the condition is true. Evaluates the body of the while loop and returns the new state.
 (define M_state_while_body
-  (lambda (syntax state)
-    (cond
-      ((null? syntax) state)
-      ((list? (car syntax)) (M_state_while_body (cdr syntax) (M_state_while_body (car syntax) state)))
-      ((eq? (operator syntax) 'if) (M_state_if (cdr syntax) state))
-      ((eq? (operator syntax) '=) (M_state_assignment syntax state state))
-      ((eq? (operator syntax) 'var) (M_state_declare syntax state))
-      ((eq? (operator syntax) 'return) (M_state_return syntax state))
-      (else state))))
+  (lambda (syntax state return)
+    (M_state_block syntax state return)))
 
 ; M_state_return: called when returning a value. If the value is a number or boolean, return it. If the value is an expression, return the evaluation of the expression. If the value is a variable, look it up in the state and return it.
 (define M_state_return
@@ -175,7 +150,7 @@
       ((not (pair? (cdr syntax))) (M_value_lookup (leftoperand syntax)))
       (else (M_state_return (cons (car syntax) (M_value_expression (leftoperand syntax) state)) state)))))
 
-; M_state_block: called when begin is encountered. executes a block of code. *SYNTAX DOES NOT INCLUDE BEGIN*
+; M_state_block: called when begin is encountered. Executes a block of code. *SYNTAX DOES NOT INCLUDE BEGIN*
 (define M_state_block
   (lambda (syntax state return)
     (cond
@@ -190,8 +165,9 @@
       ((eq? (block_operator syntax) 'if) (M_state_block_helper (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state) return))
       ((eq? (block_operator syntax) 'while) (M_state_block_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return))
       ((eq? (block_operator syntax) '=) (M_state_block_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return))
-      ((eq? (block_operator syntax) 'begin) (M_state_block_helper (rest_of_elements syntax) (M_state_block (block_format syntax) state return) return)) 
-      (else (return state)))))
+      ((eq? (block_operator syntax) 'begin) (M_state_block_helper (rest_of_elements syntax) (M_state_block (block_format syntax) state return) return))
+      ;return is missing
+      (else (error "invalid syntax")))))
 
 ;____________________________________________
 ;HELPER METHODS
@@ -267,8 +243,6 @@
     (cond
       ((list? elem) (list (cons (first_element elem) (first_element top_layer_state)) (cons (second_element elem) (second_element top_layer_state))))
       (else (list (cons elem (first_element top_layer_state)) (cons 'null (second_element top_layer_state)))))))
-
-    
 
 ; lookup_value: takes an element and a state and checks if the element is in the state, returns the value of the element
 (define M_value_lookup
