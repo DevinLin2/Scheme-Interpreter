@@ -43,6 +43,8 @@
 
 (define conditional_syntax_format cdar)
 
+(define block_format cdar)
+
 (define initial_state '((()())))
 
 (define state_layer '(()()))
@@ -102,9 +104,6 @@
       ((and (eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (not (pair? (rightoperand syntax)))) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_lookup (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
       ((eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_expression (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
       (else (M_state_assignment_helper syntax (rest_of_state_layer state_layer) original_state (lambda (v) (return (list (cons (first_element_in_var_list state_layer) (first_element v)) (cons (first_element_in_value_list state_layer) (second_element v))))))))))
-
-
-
 
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
@@ -171,29 +170,28 @@
   (lambda (syntax state)
     (cond
       ((number? (cdr syntax)) (cdr syntax))
-      ((eq? (cdr syntax) #t) "true")
-      ((eq? (cdr syntax) #f) "false")
+      ((eq? (cdr syntax) #t) 'true)
+      ((eq? (cdr syntax) #f) 'false)
       ((not (pair? (cdr syntax))) (M_value_lookup (leftoperand syntax)))
       (else (M_state_return (cons (car syntax) (M_value_expression (leftoperand syntax) state)) state)))))
 
 ; M_state_block: called when begin is encountered. executes a block of code. *SYNTAX DOES NOT INCLUDE BEGIN*
-
-
 (define M_state_block
   (lambda (syntax state return)
     (cond
       ((null? syntax) (return state))
-      (else (M_state_block_helper syntax (cons '(()()) (list (car state))) (lambda (v) v))))))
+      (else (M_state_block_helper syntax (add_state_layer state) (lambda (v) v))))))
 
 (define M_state_block_helper
   (lambda (syntax state return)
     (cond
-      ((null? syntax) (return (cdr state)))
-      ((eq? (caar syntax) 'var) (M_state_block_helper (cdr syntax) (M_state_declare (car syntax) state) (lambda (v) (return  v))))
-      ((eq? (caar syntax) 'if) (M_state_block_helper (cdr syntax) (M_state_if (cdar syntax) state) (lambda (v) (return v))))
-      ((eq? (caar syntax) 'while) (M_state_block_helper (cdr syntax) (M_state_while (cdar syntax) state) (lambda (v) (return v))))
-      (else (M_state_block_helper (cdr syntax) (M_state_assignment (car syntax) state state (lambda (v) v)) (lambda (v1) v1))))))
-
+      ((null? syntax) (return (remove_state_layer state)))
+      ((eq? (block_operator syntax) 'var) (M_state_block_helper (rest_of_elements syntax) (M_state_declare (first_element syntax) state) return))
+      ((eq? (block_operator syntax) 'if) (M_state_block_helper (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state) return))
+      ((eq? (block_operator syntax) 'while) (M_state_block_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return))
+      ((eq? (block_operator syntax) '=) (M_state_block_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return))
+      ((eq? (block_operator syntax) 'begin) (M_state_block_helper (rest_of_elements syntax) (M_state_block (block_format syntax) state return) return)) 
+      (else (return state)))))
 
 ;____________________________________________
 ;HELPER METHODS
