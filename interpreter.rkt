@@ -9,6 +9,8 @@
 ; renamed some commonly used operations for abstraction
 (define operator car)
 
+(define block_operator caar)
+
 (define leftoperand cadr)
 
 (define rightoperand caddr)
@@ -33,7 +35,25 @@
 
 (define then cadr)
 
+(define multiline_body_check cdr)
+
+(define else_check cddr)
+
 (define else caddr)
+
+(define conditional_syntax_format cdar)
+
+(define initial_state '((()())))
+
+(define state_layer '(()()))
+
+(define add_state_layer
+  (lambda (state)
+    (cons state_layer state)))
+
+(define remove_state_layer
+  (lambda (state)
+    (rest_of_elements state)))
 
 ; rest_of_state_layer: this is a helper function that takes a state layer (for example: ((a b c) (1 2 3))) and returns the state without the first binding pairs e.g. ((b c) (2 3))
 (define rest_of_state_layer
@@ -59,7 +79,7 @@
 
 ; M_state_declare: called when declaring a variable. Checks the top layer if variable is already declared. If not it adds the variable and the optional value to the state.
 (define M_state_declare
-  (lambda (syntax state)
+  (lambda (syntax state return)
     (cond
       ((M_value_exists (leftoperand syntax) (top_layer_var_list state)) (error "the variable has already been declared"))
       ((null? (rightoperand_list syntax)) (cons (M_state_variable_declare (leftoperand syntax) (top_layer state)) (rest_of_elements state)))
@@ -89,21 +109,22 @@
   (lambda (syntax state)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
-      ((M_value_expression (condition syntax) state) (M_state_then (then syntax) state))
-      ((not (null? (cddr syntax))) (M_state_else (else syntax) state))
+      ((M_value_expression (condition syntax) state) (M_state_then (rest_of_elements (then syntax)) (add_state_layer state)))
+      ((not (null? (else_check syntax))) (M_state_else (rest_of_elements (else syntax)) (add_state_layer state)))
       (else state))))
 
 ; M_state_then: called by M_state_if when the conditional is true. Checks if the then statement is a list of statememts.
 ;               If it is, function recursively calls itself to parse the list. Otherwise, function calls the respective M_state functions depending on the operation in syntax.
+;***** make sure to check for code blocks with begin here ***************
 (define M_state_then
   (lambda (syntax state)
     (cond
-      ((null? syntax) state)
-      ((list? (car syntax)) (M_state_then (cdr syntax) (M_state_then (car syntax) state)))
-      ((eq? (operator syntax) 'if) (M_state_if (cdr syntax) state))
-      ((eq? (operator syntax) '=) (M_state_assignment syntax state state))
-      ((eq? (operator syntax) 'var) (M_state_declare syntax state))
-      ((eq? (operator syntax) 'return) (M_state_return syntax state))
+      ((null? syntax) (remove_state_layer state))
+      ((not (null? (multiline_body_check syntax))) (M_state_then (rest_of_elements syntax) (M_state_then (first_element syntax) state)))
+      ((eq? (block_operator syntax) 'if) (M_state_if (conditional_syntax_format syntax) state))
+      ((eq? (block_operator syntax) '=) (M_state_assignment (first_element syntax) state state (lambda (v) v)))
+      ((eq? (block_operator syntax) 'var) (M_state_declare (first_element syntax) state (lambda (v) v)))
+      ((eq? (block_operator syntax) 'return) (M_state_return (first_element syntax) state))
       (else state))))
 
 ; M_state_else: called by M_state_if when the conditional is false. Checks if the else statement is a list of statememts.
@@ -115,7 +136,7 @@
     (cond
       ((null? syntax) state)
       ((list? (car syntax)) (M_state_else (cdr syntax) (M_state_else (car syntax) state)))
-      ((eq? (operator syntax) 'if) (M_state_if (cdr syntax) state))
+      ((eq? (operator syntax) 'if) (M_state_if (cdar syntax) state))
       ((eq? (operator syntax) '=) (M_state_assignment syntax state state))
       ((eq? (operator syntax) 'var) (M_state_declare syntax state))
       ((eq? (operator syntax) 'return) (M_state_return syntax state))
