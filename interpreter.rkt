@@ -103,6 +103,9 @@
       ((eq? (leftoperand syntax) (first_element_in_var_list state_layer)) (return (list (cons (leftoperand syntax) (rest_of_elements (first_element state_layer))) (cons (M_value_expression (rightoperand syntax) original_state) (rest_of_elements (second_element state_layer))))))
       (else (M_state_assignment_helper syntax (rest_of_state_layer state_layer) original_state (lambda (v) (return (list (cons (first_element_in_var_list state_layer) (first_element v)) (cons (first_element_in_value_list state_layer) (second_element v))))))))))
 
+
+
+
 ; M_state_if: called when performing an if operation. Checks if the conditional evaluates to a boolean.
 ;             If it does and is true, call M_state_then to eveluate the then statement, otherwise call M_state_else to evaluate the else statement
 (define M_state_if
@@ -247,6 +250,7 @@
     (cond
       ((list? elem) (list (cons (first_element elem) (first_element top_layer_state)) (cons (second_element elem) (second_element top_layer_state))))
       (else (list (cons elem (first_element top_layer_state)) (cons 'null (second_element top_layer_state)))))))
+
     
 
 ; lookup_value: takes an element and a state and checks if the element is in the state, returns the value of the element
