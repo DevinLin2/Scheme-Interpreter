@@ -233,8 +233,15 @@
   (lambda (elem state)
     (cond
       ((null? state) (error "an element used has not been declared"))
-      ((and (eq? (caar state) elem) (null? (cdar state))) (error "an element used has not been assigned a value"))
-      ((eq? (caar state) elem) (cadar state))
-      (else (M_value_lookup elem (cdr state))))))
+      ((M_value_exists elem (top_layer_var_list state)) (M_value_lookup_helper elem (first_element state)))
+      (else (M_value_lookup elem (rest_of_elements state))))))
+
+; M_value_lookup_helper: this is called when the element being looked up exists in the state. If the element has been assigned a value, return the value.
+(define M_value_lookup_helper
+  (lambda (elem state_layer)
+    (cond
+      ((and (eq? elem (first_element_in_var_list state_layer)) (eq? 'null (first_element_in_value_list state_layer))) (error "an element used has not been assigned a value"))
+      ((eq? elem (first_element_in_var_list state_layer)) (first_element_in_value_list state_layer))
+      (else (M_value_lookup_helper elem (rest_of_state_layer state_layer))))))
 
 
