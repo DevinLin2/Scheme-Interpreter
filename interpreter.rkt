@@ -130,7 +130,7 @@
   (lambda (syntax state return new_return)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) error "invalid conditional")
-      ((M_value_expression (condition syntax) state) (call/cc (lambda (break) (M_state_while syntax (M_state_while_body (rest_of_elements (leftoperand syntax)) state return new_return break) return new_return))))
+      ((M_value_expression (condition syntax) state) (call/cc (lambda (break) (M_state_while syntax (M_state_while_body syntax state return new_return break) return new_return))))
       (else (return state)))))
 
 ; M_state_while_body: called by M_state_while when the condition is true. Evaluates the body of the while loop and returns the new state.
@@ -161,7 +161,7 @@
       ((null? syntax) (return (remove_state_layer state)))
       ((eq? (block_operator syntax) 'var) (M_state_block_helper (rest_of_elements syntax) (M_state_declare (first_element syntax) state) return new_return))
       ((eq? (block_operator syntax) 'if) (M_state_block_helper (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state return new_return) return new_return))
-      ((eq? (block_operator syntax) 'while) (M_state_block_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return new_return))
+      ((eq? (block_operator syntax) 'while) (M_state_block_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state return new_return) return new_return))
       ((eq? (block_operator syntax) '=) (M_state_block_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return new_return))
       ((eq? (block_operator syntax) 'begin) (M_state_block_helper (rest_of_elements syntax) (M_state_block (block_format syntax) state return) return new_return))
       ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
@@ -173,18 +173,19 @@
   (lambda (syntax state return new_return break)
     (cond
       ((null? syntax) (return state))
-      (else (M_state_block_while_helper syntax (add_state_layer state) return new_return break)))))
+      (else (call/cc (lambda (continue) (M_state_block_while_helper (rest_of_elements (leftoperand syntax)) syntax (add_state_layer state) return new_return break continue)))))))
 
 (define M_state_block_while_helper
-  (lambda (syntax state return new_return break)
+  (lambda (syntax next state return new_return break continue)
     (cond
       ((null? syntax) (return (remove_state_layer state)))
       ((eq? (block_operator syntax) 'break) (break (remove_state_layer state)))
-      ((eq? (block_operator syntax) 'var) (M_state_block_while_helper (rest_of_elements syntax) (M_state_declare (first_element syntax) state) return new_return break))
-      ((eq? (block_operator syntax) 'if) (M_state_block_while_helper (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state return new_return) return new_return break))
-      ((eq? (block_operator syntax) 'while) (M_state_block_while_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return new_return break))
-      ((eq? (block_operator syntax) '=) (M_state_block_while_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return new_return break))
-      ((eq? (block_operator syntax) 'begin) (M_state_block_while_helper (rest_of_elements syntax) (M_state_block_while (block_format syntax) state return) return new_return break))
+      ((eq? (block_operator syntax) 'continue) (continue (M_state_while next (remove_state_layer state) return new_return)))
+      ((eq? (block_operator syntax) 'var) (M_state_block_while_helper (rest_of_elements syntax) next (M_state_declare (first_element syntax) state) return new_return break continue))
+      ((eq? (block_operator syntax) 'if) (M_state_block_while_helper (rest_of_elements syntax) next (M_state_if (conditional_syntax_format syntax) state return new_return) return new_return break continue))
+      ((eq? (block_operator syntax) 'while) (M_state_block_while_helper (rest_of_elements syntax) next (M_state_while (conditional_syntax_format syntax) state return new_return) return new_return break continue))
+      ((eq? (block_operator syntax) '=) (M_state_block_while_helper (rest_of_elements syntax) next (M_state_assignment (first_element syntax) state state return) return new_return break continue))
+      ((eq? (block_operator syntax) 'begin) (M_state_block_while_helper (rest_of_elements syntax) next (M_state_block_while (block_format syntax) state return) return new_return break continue))
       ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
       (else (error "invalid syntax")))))
 
