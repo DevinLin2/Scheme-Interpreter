@@ -35,8 +35,6 @@
 
 (define then cadr)
 
-(define multiline_body_check cdr)
-
 (define else_check cddr)
 
 (define else caddr)
@@ -76,7 +74,7 @@
       ((eq? (block_operator PT) 'var) (interpret2 (rest_of_elements PT) (M_state_declare (first_element PT) state) return new_return))
       ((eq? (block_operator PT) 'if) (interpret2 (rest_of_elements PT) (M_state_if (conditional_syntax_format PT) state return new_return) return new_return))
       ((eq? (block_operator PT) 'while) (interpret2 (rest_of_elements PT) (M_state_while (conditional_syntax_format PT) state return new_return) return new_return))
-      ((eq? (block_operator PT) 'begin) (M_state_block (block_format PT) state return new_return))
+      ((eq? (block_operator PT) 'begin) (interpret2 (rest_of_elements PT) (M_state_block (block_format PT) state return new_return) return new_return))
       (else (interpret2 (rest_of_elements PT) (M_state_assignment (first_element PT) state state return) return new_return)))))
 
 ; M_state_declare: called when declaring a variable. Checks the top layer if variable is already declared. If not it adds the variable and the optional value to the state.
@@ -112,7 +110,7 @@
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
       ((M_value_expression (condition syntax) state) (return (M_state_then (rest_of_elements (then syntax)) state return new_return)))
-      ((not (null? (else_check syntax))) (return (M_state_else (rest_of_elements (else syntax)) state return)))
+      ((not (null? (else_check syntax))) (return (M_state_else (rest_of_elements (else syntax)) state return new_return)))
       (else (return state)))))
 
 ; M_state_then: called by M_state_if when the conditional is true. This is now just a code block and we can handle that simply by calling M_state_block.
@@ -123,8 +121,8 @@
 ; M_state_else: called by M_state_if when the conditional is false. This is now also just a code block and we can handle that simply by calling M_state_block.
 ;               this could be combined with M_state_then to be one function but for semantic purposes this makes more sense
 (define M_state_else
-  (lambda (syntax state return)
-    (M_state_block syntax state return)))
+  (lambda (syntax state return new_return)
+    (M_state_block syntax state return new_return)))
 
 ; M_state_while: called when performing a while operation. Checks if the condition evaluates to a boolean.
 ;                If the condition is true, recursively call M_state_while passing in the new state after evaluating the body with M_state_while_body. Otherwise exit the function and return the current state.
@@ -132,13 +130,13 @@
   (lambda (syntax state return new_return)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) error "invalid conditional")
-      ((M_value_expression (condition syntax) state) (M_state_while syntax (M_state_while_body (rest_of_elements (leftoperand syntax)) state return new_return) return new_return))
+      ((M_value_expression (condition syntax) state) (call/cc (lambda (break) (M_state_while syntax (M_state_while_body (rest_of_elements (leftoperand syntax)) state return new_return break) return new_return))))
       (else (return state)))))
 
 ; M_state_while_body: called by M_state_while when the condition is true. Evaluates the body of the while loop and returns the new state.
 (define M_state_while_body
-  (lambda (syntax state return new_return)
-    (M_state_block syntax state return new_return)))
+  (lambda (syntax state return new_return break)
+    (M_state_block_while syntax state return new_return break)))
 
 ; M_value_return: called when returning a value. If the value is a number or boolean, return it. If the value is an expression, return the evaluation of the expression. If the value is a variable, look it up in the state and return it.
 (define M_value_return
@@ -166,6 +164,25 @@
       ((eq? (block_operator syntax) 'while) (M_state_block_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return new_return))
       ((eq? (block_operator syntax) '=) (M_state_block_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return new_return))
       ((eq? (block_operator syntax) 'begin) (M_state_block_helper (rest_of_elements syntax) (M_state_block (block_format syntax) state return) return new_return))
+      ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
+      (else (error "invalid syntax")))))
+
+(define M_state_block_while
+  (lambda (syntax state return new_return break)
+    (cond
+      ((null? syntax) (return state))
+      (else (M_state_block_while_helper syntax (add_state_layer state) return new_return break)))))
+
+(define M_state_block_while_helper
+  (lambda (syntax state return new_return break)
+    (cond
+      ((null? syntax) (return (remove_state_layer state)))
+      ((eq? (block_operator syntax) 'break) (break (remove_state_layer state)))
+      ((eq? (block_operator syntax) 'var) (M_state_block_while_helper (rest_of_elements syntax) (M_state_declare (first_element syntax) state) return new_return break))
+      ((eq? (block_operator syntax) 'if) (M_state_block_while_helper (rest_of_elements syntax) (M_state_if (conditional_syntax_format syntax) state return new_return) return new_return break))
+      ((eq? (block_operator syntax) 'while) (M_state_block_while_helper (rest_of_elements syntax) (M_state_while (conditional_syntax_format syntax) state) return new_return break))
+      ((eq? (block_operator syntax) '=) (M_state_block_while_helper (rest_of_elements syntax) (M_state_assignment (first_element syntax) state state return) return new_return break))
+      ((eq? (block_operator syntax) 'begin) (M_state_block_while_helper (rest_of_elements syntax) (M_state_block_while (block_format syntax) state return) return new_return break))
       ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
       (else (error "invalid syntax")))))
 
