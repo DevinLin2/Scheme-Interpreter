@@ -167,6 +167,8 @@
       ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
       (else (error "invalid syntax")))))
 
+; M_state_block_while: is called to handle the while loop body. This is the same as M_state_while_body but we chose to call it this name because it captures the code block essence of a while loop body.
+;                      A separate function to handle the while loop code block is used because it makes error detecting for goto functions easier. Break and continue should only exist in a while loop otherwise error. 
 (define M_state_block_while
   (lambda (syntax state return new_return break)
     (cond
