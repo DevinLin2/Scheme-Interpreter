@@ -70,6 +70,7 @@
   (lambda (PT state new_return)
     (cond
       ((null? PT) (error "no return value")) ; this means that we have fully evaluated the parse tree but there has not been a return statement. As per java rules this will throw an error.
+      ((or (eq? (block_operator PT) 'break) (eq? (block_operator PT) 'continue)) (error "incorrect use of goto function"))
       ((eq? (block_operator PT) 'return) (M_value_return (first_element PT) state))
       ((eq? (block_operator PT) 'var) (interpret2 (rest_of_elements PT) (M_state_declare (first_element PT) state) new_return))
       ((eq? (block_operator PT) 'if) (interpret2 (rest_of_elements PT) (M_state_if (conditional_syntax_format PT) state new_return) new_return))
@@ -110,7 +111,7 @@
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
       ((and (M_value_expression (condition syntax) state) (eq? (first_element (then syntax)) 'begin)) (M_state_then (rest_of_elements (then syntax)) state new_return))
-      ((M_value_expression (condition syntax) state) (M_state_then (rest_of_elements syntax) state new_return))
+      ((M_value_expression (condition syntax) state) (M_state_then (list (then syntax)) state new_return))
       ((and (not (null? (else_check syntax))) (eq? (first_element (else syntax)) 'begin)) (M_state_else (rest_of_elements (else syntax)) state new_return))
       ((not (null? (else_check syntax))) (M_state_else (rest_of_elements (rest_of_elements syntax)) state new_return))
       (else state))))
@@ -135,6 +136,8 @@
       ((M_value_expression (condition syntax) state) (call/cc (lambda (break) (M_state_while syntax (M_state_while_body syntax state new_return break) new_return))))
       (else state))))
 
+; M_state_while_with_break: this is the same as m_state_while but instead of creating a new break continuation, a break continuation is passed in. This is to ensure that if we have a continue before a break, when we eventially call break, it
+;                           will jump to the correct frame on the stack. 
 (define M_state_while_with_break
   (lambda (syntax state new_return break)
     (cond
@@ -154,7 +157,7 @@
       ((number? (leftoperand syntax)) (leftoperand syntax))
       ((eq? (leftoperand syntax) #t) 'true)
       ((eq? (leftoperand syntax) #f) 'false)
-      ((not (pair? (leftoperand syntax))) (M_value_lookup (leftoperand syntax) state))
+      ((not (pair? (leftoperand syntax))) (M_value_return (list (first_element syntax) (M_value_lookup (leftoperand syntax) state)) state))
       (else (M_value_return (list (first_element syntax) (M_value_expression (leftoperand syntax) state)) state)))))
 
 ; M_state_block: called when begin is encountered. Executes a block of code. *SYNTAX DOES NOT INCLUDE BEGIN*
@@ -164,6 +167,7 @@
       ((null? syntax) state)
       (else (M_state_block_helper syntax (add_state_layer state) new_return)))))
 
+; M_state_block_helper: evaluates a block of code with the added state layer
 (define M_state_block_helper
   (lambda (syntax state new_return)
     (cond
@@ -185,6 +189,7 @@
       ((eq? (first_element (leftoperand syntax)) 'begin) (call/cc (lambda (continue) (M_state_block_while_helper (rest_of_elements (leftoperand syntax)) syntax (add_state_layer state) new_return break continue))))
       (else (call/cc (lambda (continue) (M_state_block_while_helper (list (leftoperand syntax)) syntax (add_state_layer state) new_return break continue)))))))
 
+; M_state_block_while_helper: executes the while loop body
 (define M_state_block_while_helper
   (lambda (syntax next state new_return break continue)
     (cond
@@ -199,12 +204,13 @@
       ((eq? (block_operator syntax) 'return) (new_return (M_value_return (first_element syntax) state)))
       (else (error "invalid syntax")))))
 
+; M_state_if_with_continuation: this is called if there is an if statement within a loop. This is given the same break continuations as the while loop and works the same as the original if but with the added functionality of continuations. 
 (define M_state_if_with_continuation
   (lambda (syntax next state new_return break continue)
     (cond
       ((not (boolean? (M_value_expression (condition syntax) state))) (error "invalid conditional"))
       ((and (M_value_expression (condition syntax) state) (eq? (first_element (then syntax)) 'begin)) (M_state_block_while_helper (rest_of_elements (then syntax)) next state new_return break continue))
-      ((M_value_expression (condition syntax) state) (M_state_block_while_helper (rest_of_elements syntax) next state new_return break continue))
+      ((M_value_expression (condition syntax) state) (M_state_block_while_helper (list (then syntax)) next state new_return break continue))
       ((and (not (null? (else_check syntax))) (eq? (first_element (else syntax)) 'begin)) (M_state_block_while_helper (rest_of_elements (else syntax)) next state new_return break continue))
       ((not (null? (else_check syntax))) (M_state_block_while_helper (rest_of_elements (rest_of_elements syntax)) next state new_return break continue))
       (else state))))
