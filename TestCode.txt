@@ -1,4 +1,0 @@
-var x = 4; 
-var y;
-y = true;
-x = 23;
