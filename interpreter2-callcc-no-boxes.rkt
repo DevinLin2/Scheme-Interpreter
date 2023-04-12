@@ -1,7 +1,7 @@
 ; If you are using scheme instead of racket, comment these two lines, uncomment the (load "simpleParser.scm") and comment the (require "simpleParser.rkt")
 #lang racket
-(require "simpleParser.rkt")
-; (load "simpleParser.scm")
+(require "functionParser.rkt")
+; (load "functionParser.scm")
 
 
 ; An interpreter for the simple language that uses call/cc for the continuations.  Does not handle side effects.
@@ -239,6 +239,23 @@
   (lambda ()
     (list (newframe))))
 
+; Function to get a list of the formal parameters of a function definition
+(define getFormalParams
+  (lambda (syntax)
+    (cadr syntax)))
+
+; Function to get the body of a function given the syntax.
+(define getFunctionBody
+  (lambda (syntax)
+    (caaddr syntax)))
+
+; Function to create a closure
+(define createClosure
+  (lambda (syntax environment)
+    (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (insert (car syntax) 'closure (push-frame environment)))))
+  
+
+
 ; create an empty frame: a frame is two lists, the first are the variables and the second is the "store" of values
 (define newframe
   (lambda ()
@@ -253,6 +270,7 @@
 (define pop-frame
   (lambda (environment)
     (cdr environment)))
+
 
 ; some abstractions
 (define topframe car)
