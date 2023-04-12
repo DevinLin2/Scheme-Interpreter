@@ -25,9 +25,12 @@
 ; The main function. Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
-    (interpret-outer-program (parser file) (newenvironment)))) ; THIS IS CURRENTLY INCOMPLETE this needs to use the interpret-outer-program (which returns a state) and pass it into another function which will look up main and call M-state-function on it
+    (execute-main (interpret-outer-program (parser file) (newenvironment))))) ; THIS IS CURRENTLY INCOMPLETE this needs to use the interpret-outer-program (which returns a state) and pass it into another function which will look up main and call M-state-function on it
 
 ; Looks up main in the state returned by interpret-outer-program and executes it
+(define execute-main
+  (lambda (state)
+    (lookup 'main state)))
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -311,7 +314,7 @@
 ; Function to create a closure
 (define createClosure
   (lambda (syntax environment)
-    (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (insert (car syntax) 'closure (push-frame environment)))))
+    (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (insert (get-func-name syntax) 'closure (push-frame environment))))))
   
 
 ; create an empty frame: a frame is two lists, the first are the variables and the second is the "store" of values
