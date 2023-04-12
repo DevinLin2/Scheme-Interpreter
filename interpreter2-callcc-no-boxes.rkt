@@ -13,15 +13,43 @@
 ; The functions that start eval-...  all return a value
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
-(define interpret
+#|(define interpret
   (lambda (file)
     (scheme->language
      (call/cc
       (lambda (return)
         (interpret-statement-list (parser file) (newenvironment) return
                                   (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Continue used outside of loop"))
-                                  (lambda (v env) (myerror "Uncaught exception thrown"))))))))
+                                  (lambda (v env) (myerror "Uncaught exception thrown"))))))))|#
 
+; The main function. Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
+(define interpret
+  (lambda (file)
+    (interpret-outer-program (parser file) (newenvironment)))) ; THIS IS CURRENTLY INCOMPLETE this needs to use the interpret-outer-program (which returns a state) and pass it into another function which will look up main and call M-state-function on it
+
+; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
+; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
+; this function should only return a state and nothing more. We will write another function once this completes to find the main function in the program and run it.
+(define interpret-outer-program
+  (lambda (statement-list state)
+    (if (null? statement-list)
+        state
+        (interpret-outer-program (cdr statement-list) (interpret-outer-statement (car statement-list) state)))))
+
+; interprets a line (or function) of the outer layer of the program and adds the necessary bindings to the state
+(define interpret-outer-statement
+  (lambda (statement state)
+    (cond
+      ((eq? 'var (statement-type statement)) (interpret-declare statement state)) ;*** this needs to support function calls (value of) being a valid thing to be assigned to a variable (INCOMPLETE)
+      ((eq? '= (statement-type statement)) (interpret-assign statement state)) ; similar to above ^^^ (INCOMPLETE)
+      ((eq? 'function (statement-type statement)) (interpret-function statement state))
+      (else (myerror "Invalid statement:" (statement-type statement))))))
+
+; interprets a function by creating its closure and binding it to the state
+(define interpret-function
+  (lambda (statement state)
+    (insert (get-func-name statement) (createClosure statement state) state)))
+      
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
@@ -276,7 +304,7 @@
 ; Function to get the body of a function given the syntax.
 (define getFunctionBody
   (lambda (syntax)
-    (caaddr syntax)))
+    (cadddr syntax)))
 
 ; Function to create a closure
 (define createClosure
