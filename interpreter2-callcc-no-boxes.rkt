@@ -25,12 +25,15 @@
 ; The main function. Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
-    (execute-main (interpret-outer-program (parser file) (newenvironment))))) ; THIS IS CURRENTLY INCOMPLETE this needs to use the interpret-outer-program (which returns a state) and pass it into another function which will look up main and call M-state-function on it
+    (execute-main (interpret-outer-program (parser file) (newenvironment)))))
 
 ; Looks up main in the state returned by interpret-outer-program and executes it
 (define execute-main
   (lambda (state)
-    (lookup 'main state)))
+    (M-state-function (get-function-body (lookup 'main state)) 'main main-args state
+                      (lambda (env) (myerror "Break used outside of loop"))
+                      (lambda (env) (myerror "Throw used out of try-catch block"))
+                      (lambda (v) v))))
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -53,8 +56,8 @@
 ; interprets a function by creating its closure and binding it to the state
 (define interpret-function
   (lambda (statement state)
-    (insert (get-func-name statement) (createClosure statement state) state)))
-      
+    (insert (get-func-name statement) (createClosure statement state) (push-frame state))))
+    
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
@@ -225,10 +228,10 @@
 
 ; M state function to evaluate a function when a function is called. It will call on a helper function and pass it the function state from the closure.
 (define M-state-function
-  (lambda (syntax state break throw return)
+  (lambda (body name args state break throw return)
     (M-state-eval-function-body
-     (get-function-body (lookup (get-func-name syntax))) ; body of function
-     (bind-parameters (closure-formal-params (lookup (get-func-name syntax))) (get-arg-list syntax) (push-frame (lookup (get-func-name syntax))) state throw) ; bind parameters to state and use this as function state
+     body 
+     (bind-parameters (closure-formal-params (lookup name state)) args (push-frame (closure-func-state (lookup name state))) state throw) ; bind parameters to state and use this as function state
      (lambda (s) (error "error: break out of loop"))
      throw
      return))) ; this last part for the return continuation might be wrong
@@ -286,6 +289,7 @@
 (define get-function-body operand1)
 (define get-func-name operand1)
 (define get-arg-list cddr)
+(define closure-func-state operand2)
 
 (define catch-var
   (lambda (catch-statement)
@@ -322,6 +326,9 @@
   (lambda ()
     '(() ())))
 
+; arguments for main
+(define main-args '())
+    
 ; add a frame onto the top of the environment
 (define push-frame
   (lambda (environment)
