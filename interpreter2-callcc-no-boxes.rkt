@@ -27,6 +27,8 @@
   (lambda (file)
     (interpret-outer-program (parser file) (newenvironment)))) ; THIS IS CURRENTLY INCOMPLETE this needs to use the interpret-outer-program (which returns a state) and pass it into another function which will look up main and call M-state-function on it
 
+; Looks up main in the state returned by interpret-outer-program and executes it
+
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
 ; this function should only return a state and nothing more. We will write another function once this completes to find the main function in the program and run it.
@@ -299,7 +301,7 @@
 ; Function to get a list of the formal parameters of a function definition
 (define getFormalParams
   (lambda (syntax)
-    (cadr syntax)))
+    (caddr syntax)))
 
 ; Function to get the body of a function given the syntax.
 (define getFunctionBody
