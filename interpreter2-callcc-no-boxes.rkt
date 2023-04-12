@@ -1,6 +1,9 @@
-; If you are using scheme instead of racket, comment these two lines, uncomment the (load "simpleParser.scm") and comment the (require "simpleParser.rkt")
+;-----------------------
+; Devin Lin
+;-----------------------
+
 #lang racket
-(require "simpleParser.rkt")
+(require "functionParser.rkt")
 ; (load "simpleParser.scm")
 
 
@@ -189,13 +192,38 @@
         (= val1 val2)
         (eq? val1 val2))))
 
+; M state function to evaluate a function when a function is called. It will call on a helper function and pass it the function state from the closure.
+(define M-state-function
+  (lambda (syntax state break throw return)
+    (M-state-eval-function-body
+     (get-function-body (lookup (get-func-name syntax))) ; body of function
+     (bind-parameters (closure-formal-params (lookup (get-func-name syntax))) (get-arg-list syntax) (push-frame (lookup (get-func-name syntax))) state throw) ; bind parameters to state and use this as function state
+     (lambda (s) (error "error: break out of loop"))
+     throw
+     return))) ; this last part for the return continuation might be wrong
+     
+; Evaluates the function body given the function's closure and updated state/function state     
+(define M-state-eval-function-body
+  (lambda (body fstate break throw return)
+    body)) ;incomplete
 
+; Binds the actual parameters to the formal parameters and puts then bindings into the function state
+(define bind-parameters
+  (lambda (params args fstate state throw)
+    (if (null? params)
+        fstate
+        (bind-parameters (rest-of-elements params) (rest-of-elements args) (insert (var-name params) (eval-expression (var-expr args) state) fstate) state))))
+  
 ;-----------------
 ; HELPER FUNCTIONS
 ;-----------------
 
 ; These helper functions define the operator and operands of a value expression
 (define operator car)
+(define var-name car)
+(define closure-formal-params car)
+(define var-expr car)
+(define rest-of-elements cdr)
 (define operand1 cadr)
 (define operand2 caddr)
 (define operand3 cadddr)
@@ -224,6 +252,9 @@
 (define get-try operand1)
 (define get-catch operand2)
 (define get-finally operand3)
+(define get-function-body operand1)
+(define get-func-name operand1)
+(define get-arg-list cddr)
 
 (define catch-var
   (lambda (catch-statement)
