@@ -203,7 +203,7 @@
 ; Evaluates the function body given the function's closure and updated state/function state     
 (define M-state-eval-function-body
   (lambda (body fstate break throw return)
-    body)) ;incomplete
+    (interpret-statement-list body fstate return break (lambda (s) (error "error: continue out of loop")) throw)))
 
 ; Binds the actual parameters to the formal parameters and puts then bindings into the function state
 (define bind-parameters
