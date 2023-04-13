@@ -30,10 +30,13 @@
 ; Looks up main in the state returned by interpret-outer-program and executes it
 (define execute-main
   (lambda (state)
-    (M-state-function (get-function-body (lookup 'main state)) 'main main-args state
+    (scheme->language
+     (call/cc
+      (lambda (return)
+        (M-state-function (get-function-body (lookup 'main state)) 'main main-args state
                       (lambda (env) (myerror "Break used outside of loop"))
                       (lambda (env) (myerror "Throw used out of try-catch block"))
-                      (lambda (v) v))))
+                      return))))))
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -69,7 +72,7 @@
 (define interpret-statement
   (lambda (statement environment return break continue throw)
     (cond
-      ((eq? 'return (statement-type statement)) (interpret-return statement environment return))
+      ((eq? 'return (statement-type statement)) (interpret-return statement environment break throw return))
       ((eq? 'var (statement-type statement)) (interpret-declare statement environment))
       ((eq? '= (statement-type statement)) (interpret-assign statement environment))
       ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
@@ -83,8 +86,8 @@
 
 ; Calls the return continuation with the given expression value
 (define interpret-return
-  (lambda (statement environment return)
-    (return (eval-expression (get-expr statement) environment))))
+  (lambda (statement environment break throw return)
+    (return (eval-expression (get-expr statement) environment break throw return))))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -102,7 +105,7 @@
 (define interpret-if
   (lambda (statement environment return break continue throw)
     (cond
-      ((eval-expression (get-condition statement) environment) (interpret-statement (get-then statement) environment return break continue throw))
+      ((eval-expression (get-condition statement) environment break throw return) (interpret-statement (get-then statement) environment return break continue throw))
       ((exists-else? statement) (interpret-statement (get-else statement) environment return break continue throw))
       (else environment))))
 
@@ -182,34 +185,34 @@
 
 ; Evaluates all possible boolean and arithmetic expressions, including constants and variables.
 (define eval-expression
-  (lambda (expr environment)
+  (lambda (expr environment break throw return)
     (cond
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
       ((not (list? expr)) (lookup expr environment))
-      (else (eval-operator expr environment)))))
+      (else (eval-operator expr environment break throw return)))))
 
 ; Evaluate a binary (or unary) operator.  Although this is not dealing with side effects, I have the routine evaluate the left operand first and then
 ; pass the result to eval-binary-op2 to evaluate the right operand.  This forces the operands to be evaluated in the proper order in case you choose
 ; to add side effects to the interpreter
 (define eval-operator
-  (lambda (expr environment)
+  (lambda (expr environment break throw return)
     (cond
       ((eq? '! (operator expr)) (not (eval-expression (operand1 expr) environment)))
       ((and (eq? '- (operator expr)) (= 2 (length expr))) (- (eval-expression (operand1 expr) environment)))
-      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment) environment)))))
+      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment break throw return) environment break throw return)))))
 
 ; Complete the evaluation of the binary operator by evaluating the second operand and performing the operation.
 (define eval-binary-op2
-  (lambda (expr op1value environment)
+  (lambda (expr op1value environment break throw return)
     (cond
       ((eq? '+ (operator expr)) (+ op1value (eval-expression (operand2 expr) environment)))
       ((eq? '- (operator expr)) (- op1value (eval-expression (operand2 expr) environment)))
       ((eq? '* (operator expr)) (* op1value (eval-expression (operand2 expr) environment)))
       ((eq? '/ (operator expr)) (quotient op1value (eval-expression (operand2 expr) environment)))
       ((eq? '% (operator expr)) (remainder op1value (eval-expression (operand2 expr) environment)))
-      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment)))
+      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment break throw return)))
       ((eq? '!= (operator expr)) (not (isequal op1value (eval-expression (operand2 expr) environment))))
       ((eq? '< (operator expr)) (< op1value (eval-expression (operand2 expr) environment)))
       ((eq? '> (operator expr)) (> op1value (eval-expression (operand2 expr) environment)))
@@ -217,6 +220,7 @@
       ((eq? '>= (operator expr)) (>= op1value (eval-expression (operand2 expr) environment)))
       ((eq? '|| (operator expr)) (or op1value (eval-expression (operand2 expr) environment)))
       ((eq? '&& (operator expr)) (and op1value (eval-expression (operand2 expr) environment)))
+      ((eq? 'funcall (operator expr)) (M-state-function (operand1 op1value) (get-func-name expr) (arg-list expr) environment break throw return))
       (else (myerror "Unknown operator:" (operator expr))))))
 
 ; Determines if two values are equal.  We need a special test because there are both boolean and integer types.
@@ -231,7 +235,7 @@
   (lambda (body name args state break throw return)
     (M-state-eval-function-body
      body 
-     (bind-parameters (closure-formal-params (lookup name state)) args (push-frame (closure-func-state (lookup name state))) state throw) ; bind parameters to state and use this as function state
+     (bind-parameters (closure-formal-params (lookup name state)) args (closure-func-state (lookup name state)) state break throw return) ; bind parameters to state and use this as function state
      (lambda (s) (error "error: break out of loop"))
      throw
      return))) ; this last part for the return continuation might be wrong
@@ -243,10 +247,10 @@
 
 ; Binds the actual parameters to the formal parameters and puts then bindings into the function state
 (define bind-parameters
-  (lambda (params args fstate state throw)
+  (lambda (params args fstate state break throw return)
     (if (null? params)
         fstate
-        (bind-parameters (rest-of-elements params) (rest-of-elements args) (insert (var-name params) (eval-expression (var-expr args) state) fstate) state))))
+        (bind-parameters (rest-of-elements params) (rest-of-elements args) (insert (var-name params) (eval-expression (var-expr args) state break throw return) fstate) state break throw return))))
   
 ;-----------------
 ; HELPER FUNCTIONS
@@ -261,6 +265,7 @@
 (define operand1 cadr)
 (define operand2 caddr)
 (define operand3 cadddr)
+(define arg-list cddr)
 
 (define exists-operand2?
   (lambda (statement)
