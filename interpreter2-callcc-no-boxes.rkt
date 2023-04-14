@@ -64,15 +64,17 @@
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
     (cond
-      ((not (pair? (interpret-statement (car statement-list) environment return break continue throw))) (return (interpret-statement (car statement-list) environment return break continue throw)))
       ((null? statement-list) environment)
-      (else (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw)))))
+      ((not (pair? (interpret-statement (car statement-list) environment return break continue throw))) (return (interpret-statement (car statement-list) environment return break continue throw)))
+      (else (interpret-statement-list (cdr statement-list)
+                                      ; WE NEED TO COPY OVER THE ENVIRONMENT HERE (interpret-statement (car statement-list) environment return break continue throw) return break continue throw)))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
 (define interpret-statement
   (lambda (statement environment return break continue throw)
     (cond
       ((eq? 'return (statement-type statement)) (interpret-return statement environment break throw return))
+      ((eq? 'ignored-return (statement-type statement)) environment)
       ((eq? 'var (statement-type statement)) (interpret-declare statement environment break throw))
       ((eq? '= (statement-type statement)) (interpret-assign statement environment break throw return))
       ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
@@ -83,13 +85,23 @@
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment break return throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
       ((eq? 'function (statement-type statement)) (interpret-function statement environment))
-      ((eq? 'funcall (statement-type statement)) (M-state-function (eval-expression (operand1 statement) environment break throw return) (get-func-name statement) (arg-list statement) environment break throw return))
+      ; if we see a 'funcall this means that the function's return value should be ignored
+      ((eq? 'funcall (statement-type statement)) (M-state-function (ignore-return (get-function-body (lookup (get-func-name statement) environment))) (get-func-name statement) (arg-list statement) environment break throw return))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment break throw return)
     (return (eval-expression (get-expr statement) environment break throw return))))
+
+; removes the return from functions that we should ignore the return for
+(define ignore-return
+  (lambda (body)
+    (cond
+      ((null? body) body)
+      ((list? (car body)) (cons (ignore-return (car body)) (ignore-return (cdr body))))
+      ((eq? (car body) 'return) (list 'ignored-return))
+      (else (cons (car body) (ignore-return (cdr body)))))))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -253,8 +265,8 @@
 
 ; Executes when a function is being called recursively. Updates and returns the function state with a new closure for the recursively called function.
 (define update-closure
-  (lambda (fstate prev-fstate name formal-params body)
-    (update name (list formal-params body prev-fstate) fstate)))
+  (lambda (fstate new-fstate name formal-params body)
+    (update name (list formal-params body new-fstate) fstate)))
             
 ; Evaluates the function body given the function's closure and updated state/function state     
 (define M-state-eval-function-body
@@ -282,6 +294,7 @@
 (define operand2 caddr)
 (define operand3 cadddr)
 (define arg-list cddr)
+(define nested-body-check caar)
 
 (define exists-operand2?
   (lambda (statement)
