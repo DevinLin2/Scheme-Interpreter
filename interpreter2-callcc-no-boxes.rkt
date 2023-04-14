@@ -25,15 +25,15 @@
 ; The main function. Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
-    (execute-main (interpret-outer-program (parser file) (newenvironment)) (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))))
+    (call/cc
+     (lambda (main-return)
+       (execute-main (interpret-outer-program (parser file) (newenvironment)) (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) main-return)))))
 
 ; Looks up main in the state returned by interpret-outer-program and executes it
 (define execute-main
-  (lambda (state break throw return)
-    (scheme->language
-     ;(call/cc
-      ;(lambda (return)
-        (M-state-function (get-function-body (lookup 'main state)) 'main main-args state break throw return)))) ; THIS WAS CHANGED TO BE (lambda (v) v) insted of return from the call/cc which makes sense but I'm not sure if it is correct
+  (lambda (state break throw main-return)
+    (main-return (scheme->language
+        (M-state-function (get-function-body (lookup 'main state)) 'main main-args state break throw (lambda (v) v)))))) ; THIS WAS CHANGED TO BE (lambda (v) v) insted of return from the call/cc which makes sense but I'm not sure if it is correct
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -50,7 +50,7 @@
 (define interpret-outer-statement
   (lambda (statement state)
     (cond
-      ((eq? 'var (statement-type statement)) (interpret-declare statement state (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))) ;*** this needs to support function calls (value of) being a valid thing to be assigned to a variable (INCOMPLETE)
+      ((eq? 'var (statement-type statement)) (interpret-outer-declare statement state)) ;*** this needs to support function calls (value of) being a valid thing to be assigned to a variable (INCOMPLETE)
       ((eq? '= (statement-type statement)) (interpret-assign statement state (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))) ; similar to above ^^^ (INCOMPLETE)
       ((eq? 'function (statement-type statement)) (interpret-function statement state))
       (else (myerror "Invalid statement:" (statement-type statement))))))
@@ -63,16 +63,17 @@
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
-    (if (null? statement-list)
-        environment
-        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
+    (cond
+      ((not (pair? (interpret-statement (car statement-list) environment return break continue throw))) (return (interpret-statement (car statement-list) environment return break continue throw)))
+      ((null? statement-list) environment)
+      (else (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw)))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
 (define interpret-statement
   (lambda (statement environment return break continue throw)
     (cond
       ((eq? 'return (statement-type statement)) (interpret-return statement environment break throw return))
-      ((eq? 'var (statement-type statement)) (interpret-declare statement environment break throw return))
+      ((eq? 'var (statement-type statement)) (interpret-declare statement environment break throw))
       ((eq? '= (statement-type statement)) (interpret-assign statement environment break throw return))
       ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
       ((eq? 'while (statement-type statement)) (interpret-while statement environment break throw return))
@@ -90,9 +91,9 @@
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
-  (lambda (statement environment break throw return)
+  (lambda (statement environment break throw)
     (if (exists-declare-value? statement)
-        (insert (get-declare-var statement) (eval-expression (get-declare-value statement) environment break throw return) environment)
+        (insert (get-declare-var statement) (call/cc (lambda (return) (eval-expression (get-declare-value statement) environment break throw return))) environment)
         (insert (get-declare-var statement) 'novalue environment))))
 
 ; Updates the environment to add an new binding for a variable
@@ -100,6 +101,13 @@
   (lambda (statement environment break throw return)
     (update (get-assign-lhs statement) (eval-expression (get-assign-rhs statement) environment break throw return) environment)))
 
+; New interpret-declare function which will be used to assign function values to global variables
+(define interpret-outer-declare
+  (lambda (statement environment)
+    (if (exists-declare-value? statement)
+        (insert (get-declare-var statement) (call/cc (lambda (return) (eval-expression (get-declare-value statement) environment (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) return))) environment); this will be used to return the value of functions when assigning them to a global variable
+        (insert (get-declare-var statement) 'novalue environment))))
+       
 ; We need to check if there is an else condition.  Otherwise, we evaluate the expression and do the right thing.
 (define interpret-if
   (lambda (statement environment return break continue throw)
