@@ -25,18 +25,15 @@
 ; The main function. Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file)
-    (execute-main (interpret-outer-program (parser file) (newenvironment)))))
+    (execute-main (interpret-outer-program (parser file) (newenvironment)) (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))))
 
 ; Looks up main in the state returned by interpret-outer-program and executes it
 (define execute-main
-  (lambda (state)
+  (lambda (state break throw return)
     (scheme->language
-     (call/cc
-      (lambda (return)
-        (M-state-function (get-function-body (lookup 'main state)) 'main main-args state
-                      (lambda (env) (myerror "Break used outside of loop"))
-                      (lambda (env) (myerror "Throw used out of try-catch block"))
-                      (lambda (v) v))))))) ; THIS WAS CHANGED TO BE (lambda (v) v) insted of return from the call/cc which makes sense but I'm not sure if it is correct
+     ;(call/cc
+      ;(lambda (return)
+        (M-state-function (get-function-body (lookup 'main state)) 'main main-args state break throw return)))) ; THIS WAS CHANGED TO BE (lambda (v) v) insted of return from the call/cc which makes sense but I'm not sure if it is correct
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -53,15 +50,15 @@
 (define interpret-outer-statement
   (lambda (statement state)
     (cond
-      ((eq? 'var (statement-type statement)) (interpret-declare statement state 'null 'null 'null)) ;*** this needs to support function calls (value of) being a valid thing to be assigned to a variable (INCOMPLETE)
-      ((eq? '= (statement-type statement)) (interpret-assign statement state 'null 'null 'null)) ; similar to above ^^^ (INCOMPLETE)
+      ((eq? 'var (statement-type statement)) (interpret-declare statement state (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))) ;*** this needs to support function calls (value of) being a valid thing to be assigned to a variable (INCOMPLETE)
+      ((eq? '= (statement-type statement)) (interpret-assign statement state (lambda (env) (myerror "Break used outside of loop")) (lambda (env) (myerror "Throw used outside of try/catch")) (lambda(v) v))) ; similar to above ^^^ (INCOMPLETE)
       ((eq? 'function (statement-type statement)) (interpret-function statement state))
       (else (myerror "Invalid statement:" (statement-type statement))))))
 
 ; interprets a function by creating its closure and binding it to the state
 (define interpret-function
   (lambda (statement state)
-    (insert (get-func-name statement) (createClosure statement state) (push-frame state))))
+    (insert (get-func-name statement) (createClosure statement state) state)))
     
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
