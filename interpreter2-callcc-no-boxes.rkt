@@ -36,7 +36,7 @@
         (M-state-function (get-function-body (lookup 'main state)) 'main main-args state
                       (lambda (env) (myerror "Break used outside of loop"))
                       (lambda (env) (myerror "Throw used out of try-catch block"))
-                      return))))))
+                      (lambda (v) v))))))) ; THIS WAS CHANGED TO BE (lambda (v) v) insted of return from the call/cc which makes sense but I'm not sure if it is correct
 
 ; we need a new function that is similar to interpret-statement-list which will only be ran once for the "outer layer" of the program
 ; this interpret will do all of the variable assignments and declarations along with function definitions and the main interpret function will call this instead of interpret-statement-list
@@ -238,11 +238,17 @@
   (lambda (body name args state break throw return)
     (M-state-eval-function-body
      body 
-     (bind-parameters (closure-formal-params (lookup name state)) args (closure-func-state (lookup name state)) state break throw return) ; bind parameters to state and use this as function state
+     (update-closure (bind-parameters (closure-formal-params (lookup name state)) args (closure-func-state (lookup name state)) state break throw return) (closure-func-state (lookup name state)) name (closure-formal-params (lookup name state)) body) ; bind parameters to state and use this as function state
+     ; bind parameters is the problem right now: when binding the actual params to the formal params also update the function binding to an actual closure instead of 'closure
      (lambda (s) (error "error: break out of loop"))
      throw
      return))) ; this last part for the return continuation might be wrong
-     
+
+; Executes when a function is being called recursively. Updates and returns the function state with a new closure for the recursively called function.
+(define update-closure
+  (lambda (fstate prev-fstate name formal-params body)
+    (update name (list formal-params body prev-fstate) fstate)))
+            
 ; Evaluates the function body given the function's closure and updated state/function state     
 (define M-state-eval-function-body
   (lambda (body fstate break throw return)
