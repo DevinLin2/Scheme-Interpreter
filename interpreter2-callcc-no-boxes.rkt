@@ -79,8 +79,10 @@
       ((eq? 'continue (statement-type statement)) (continue environment))
       ((eq? 'break (statement-type statement)) (break environment))
       ((eq? 'begin (statement-type statement)) (interpret-block statement environment return break continue throw))
-      ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
+      ((eq? 'throw (statement-type statement)) (interpret-throw statement environment break return throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
+      ((eq? 'function (statement-type statement)) (interpret-function statement environment))
+      ((eq? 'funcall (statement-type statement)) (M-state-function (eval-expression (operand1 statement) environment break throw return) (get-func-name statement) (arg-list statement) environment break throw return))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
 ; Calls the return continuation with the given expression value
@@ -131,8 +133,8 @@
 
 ; We use a continuation to throw the proper value. Because we are not using boxes, the environment/state must be thrown as well so any environment changes will be kept
 (define interpret-throw
-  (lambda (statement environment throw)
-    (throw (eval-expression (get-expr statement) environment) environment)))
+  (lambda (statement environment break throw return)
+    (throw (eval-expression (get-expr statement) environment break return throw) environment)))
 
 ; Interpret a try-catch-finally block
 
@@ -426,7 +428,7 @@
   (lambda (var val environment)
     (if (exists? var environment)
         (update-existing var val environment)
-        (myerror "error: variable used but not defined:" var))))
+        (myerror "error: variable used but not defined/out of scope:" var))))
 
 ; Add a new variable/value pair to the frame.
 (define add-to-frame
