@@ -60,12 +60,13 @@
   (lambda (statement state)
     (insert (get-func-name statement) (createClosure statement state) state)))
     
-; interprets a list of statements.  The environment from each statement is used for the next ones.
+; interprets a list of statements.  The environment from each statement is used for the next ones. <-- This is no longer true. We need to copy the base state of each statement into the new one
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
-    (cond
-      ((not (pair? (interpret-statement (car statement-list) environment return break continue throw))) (return (interpret-statement (car statement-list) environment return break continue throw)))
+    (cond 
       ((null? statement-list) environment)
+      ; this is wrong because calling functions but not returning them will make this function return
+      ((not (pair? (interpret-statement (car statement-list) environment return break continue throw))) (return (interpret-statement (car statement-list) environment return break continue throw)))
       (else (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw)))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
@@ -73,6 +74,7 @@
   (lambda (statement environment return break continue throw)
     (cond
       ((eq? 'return (statement-type statement)) (interpret-return statement environment break throw return))
+      ((eq? 'ignored-return (statement-type statement)) environment)
       ((eq? 'var (statement-type statement)) (interpret-declare statement environment break throw))
       ((eq? '= (statement-type statement)) (interpret-assign statement environment break throw return))
       ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
@@ -83,13 +85,23 @@
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment break return throw))
       ((eq? 'try (statement-type statement)) (interpret-try statement environment return break continue throw))
       ((eq? 'function (statement-type statement)) (interpret-function statement environment))
-      ((eq? 'funcall (statement-type statement)) (M-state-function (eval-expression (operand1 statement) environment break throw return) (get-func-name statement) (arg-list statement) environment break throw return))
+      ; if we see a 'funcall this means that the function's return value should be ignored
+      ((eq? 'funcall (statement-type statement)) (pop-frame (M-state-function (ignore-return (get-function-body (lookup (get-func-name statement) environment))) (get-func-name statement) (arg-list statement) environment break throw return)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment break throw return)
     (return (eval-expression (get-expr statement) environment break throw return))))
+
+; removes the return from functions that we should ignore the return for
+(define ignore-return
+  (lambda (body)
+    (cond
+      ((null? body) body)
+      ((list? (car body)) (cons (ignore-return (car body)) (ignore-return (cdr body))))
+      ((eq? (car body) 'return) (list 'ignored-return))
+      (else (cons (car body) (ignore-return (cdr body)))))))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -142,7 +154,7 @@
 ; We use a continuation to throw the proper value. Because we are not using boxes, the environment/state must be thrown as well so any environment changes will be kept
 (define interpret-throw
   (lambda (statement environment break throw return)
-    (throw (eval-expression (get-expr statement) environment break return throw) environment)))
+    (throw (eval-expression (get-expr statement) environment break return throw))))
 
 ; Interpret a try-catch-finally block
 
@@ -208,7 +220,7 @@
 (define eval-operator
   (lambda (expr environment break throw return)
     (cond
-      ((eq? '! (operator expr)) (not (eval-expression (operand1 expr) environment)))
+      ((eq? '! (operator expr)) (not (eval-expression (operand1 expr) environment break throw return)))
       ((and (eq? '- (operator expr)) (= 2 (length expr))) (- (eval-expression (operand1 expr) environment)))
       (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment break throw return) environment break throw return)))))
 
@@ -245,16 +257,15 @@
   (lambda (body name args state break throw return)
     (M-state-eval-function-body
      body 
-     (update-closure (bind-parameters (closure-formal-params (lookup name state)) args (closure-func-state (lookup name state)) state break throw return) (closure-func-state (lookup name state)) name (closure-formal-params (lookup name state)) body) ; bind parameters to state and use this as function state
-     ; bind parameters is the problem right now: when binding the actual params to the formal params also update the function binding to an actual closure instead of 'closure
+     (update-closure (bind-parameters (closure-formal-params (lookup name state)) args (closure-func-state (lookup name state)) state break throw return) name (closure-formal-params (lookup name state)) body) ; bind parameters to state and use this as function state
      (lambda (s) (error "error: break out of loop"))
      throw
      return))) ; this last part for the return continuation might be wrong
 
 ; Executes when a function is being called recursively. Updates and returns the function state with a new closure for the recursively called function.
 (define update-closure
-  (lambda (fstate prev-fstate name formal-params body)
-    (update name (list formal-params body prev-fstate) fstate)))
+  (lambda (fstate name formal-params body)
+    (update name (list formal-params body fstate) fstate)))
             
 ; Evaluates the function body given the function's closure and updated state/function state     
 (define M-state-eval-function-body
@@ -264,10 +275,22 @@
 ; Binds the actual parameters to the formal parameters and puts then bindings into the function state
 (define bind-parameters
   (lambda (params args fstate state break throw return)
-    (if (null? params)
-        fstate
-        (bind-parameters (rest-of-elements params) (rest-of-elements args) (insert (var-name params) (eval-expression (var-expr args) state break throw return) fstate) state break throw return))))
-  
+    (cond
+      ((not (eq? (length params) (length args))) (error "Unexpected input size"))
+      ((null? params) (copy-over-globals fstate state))
+      (else (bind-parameters (rest-of-elements params) (rest-of-elements args) (insert (var-name params) (eval-expression (var-expr args) state break throw return) fstate) state break throw return)))))
+
+(define copy-over-globals
+  (lambda (fstate state)
+    (if (null? (cdr fstate))
+        (list (global-in-env state))
+        (cons (car fstate) (copy-over-globals (cdr fstate) state)))))
+
+(define global-in-env
+  (lambda (state)
+    (if (null? (cdr state))
+        (car state)
+        (global-in-env (cdr state)))))
 ;-----------------
 ; HELPER FUNCTIONS
 ;-----------------
@@ -282,6 +305,7 @@
 (define operand2 caddr)
 (define operand3 cadddr)
 (define arg-list cddr)
+(define nested-body-check caar)
 
 (define exists-operand2?
   (lambda (statement)
