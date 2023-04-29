@@ -3,7 +3,7 @@
 ;-----------------------
 
 #lang racket
-(require "functionParser.rkt")
+(require "classParser.rkt")
 ; (load "functionParser.scm")
 
 ; An interpreter for the simple language that uses call/cc for the continuations.  Does not handle side effects.
@@ -364,7 +364,60 @@
 (define createClosure
   (lambda (syntax environment)
     (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (insert (get-func-name syntax) 'closure (push-frame environment))))))
-  
+
+; Function to create a function closure
+(define getFunctionClosure
+  (lambda (syntax)
+    (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (get-func-name syntax)))))
+
+
+; Function to get the super class
+(define getSuperClassName
+  (lambda (syntax)
+    (cond
+      ((null? (caddr syntax)) '())
+      (else (car(cdaddr syntax))))))
+
+; Function to get list of class instance variables
+(define getInstanceVariableNames
+  (lambda (syntax)
+    (cond
+      ((eq? (caar syntax) 'function) null)
+      (else (cons (cadar syntax) (getInstanceVariableNames (cdr syntax)))))))
+
+; Function to get list of class instance initial values
+(define getClassInstanceVariableValues
+  (lambda (syntax)
+    (cond
+      ((eq? (caar syntax) 'function) null)
+      ((null? (cddar syntax)) (cons 'novalue (getClassInstanceVariableValues (cdr syntax))))
+      (else (cons (caddar syntax) (getClassInstanceVariableValues (cdr syntax)))))))
+
+; Function to get list of function names
+(define getClassFunctionNames
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((eq? (caar syntax) 'function) (cons (cadar syntax) (getClassFunctionNames (cdr syntax))))
+      (else (getClassFunctionNames (cdr syntax))))))
+
+; Function to get a list of function closures
+(define getClassFunctionClosures
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((eq? (caar syntax) 'function) (cons (getFunctionClosure (car syntax)) (getClassFunctionClosures (cdr syntax))))
+      (else (getClassFunctionClosures (cdr syntax))))))
+
+
+; Function to create a class closure
+(define createClassClosure
+  (lambda (syntax)
+    (cons (list (getSuperClassName syntax)) (cons (list (append (getInstanceVariableNames (getClassBody syntax)) (getClassInstanceVariableValues (getClassBody syntax)))) (list (cons (getClassFunctionNames (getClassBody syntax)) (getClassFunctionClosures (getClassBody syntax))))))))
+
+(define getClassBody
+  (lambda (syntax)
+    (cadddr syntax)))
 
 ; create an empty frame: a frame is two lists, the first are the variables and the second is the "store" of values
 (define newframe
