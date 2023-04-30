@@ -370,6 +370,7 @@
   (lambda (syntax)
     (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (get-func-name syntax)))))
 
+; Function to get the Instance variable names and value
 
 ; Function to get the super class
 (define getSuperClassName
@@ -382,13 +383,15 @@
 (define getInstanceVariableNames
   (lambda (syntax)
     (cond
-      ((eq? (caar syntax) 'function) null)
+      ((null? syntax) null)
+      ((eq? (caar syntax) 'function) (getInstanceVariableNames (cdr syntax)))
       (else (cons (cadar syntax) (getInstanceVariableNames (cdr syntax)))))))
 
 ; Function to get list of class instance initial values
 (define getClassInstanceVariableValues
   (lambda (syntax)
     (cond
+      ((null? syntax) null)
       ((eq? (caar syntax) 'function) null)
       ((null? (cddar syntax)) (cons 'novalue (getClassInstanceVariableValues (cdr syntax))))
       (else (cons (caddar syntax) (getClassInstanceVariableValues (cdr syntax)))))))
@@ -410,14 +413,21 @@
       (else (getClassFunctionClosures (cdr syntax))))))
 
 
-; Function to create a class closure
 (define createClassClosure
   (lambda (syntax)
-    (cons (list (getSuperClassName syntax)) (cons (list (append (getInstanceVariableNames (getClassBody syntax)) (getClassInstanceVariableValues (getClassBody syntax)))) (list (cons (getClassFunctionNames (getClassBody syntax)) (getClassFunctionClosures (getClassBody syntax))))))))
+    (cons (list (getSuperClassName syntax)) (cons (list (getInstanceVariableNames (getClassBody syntax)) (getClassInstanceVariableValues (getClassBody syntax))) (list (cons (getClassFunctionNames (getClassBody syntax)) (list (getClassFunctionClosures (getClassBody syntax)))))))))
 
 (define getClassBody
   (lambda (syntax)
     (cadddr syntax)))
+
+(define getVarName
+  (lambda (syntax)
+    (cadr syntax)))
+
+(define getRuntimeType
+  (lambda (syntax)
+    (car (cdaddr syntax))))
 
 ; create an empty frame: a frame is two lists, the first are the variables and the second is the "store" of values
 (define newframe
