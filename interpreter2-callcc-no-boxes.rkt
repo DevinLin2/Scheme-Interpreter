@@ -340,6 +340,116 @@
   (lambda (catch-statement)
     (car (operand1 catch-statement))))
 
+;------------------------
+; Functions to create class closure 
+;------------------------
+
+; Function to get the super class 
+(define getSuperClassName
+  (lambda (syntax)
+    (cond
+      ((null? (caddr syntax)) '())
+      (else (car(cdaddr syntax))))))
+
+; Function to get list of class instance variables
+(define getInstanceVariableNames
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((eq? (caar syntax) 'function) (getInstanceVariableNames (cdr syntax)))
+      ((eq? (caar syntax) 'static-function) (getInstanceVariableNames (cdr syntax)))
+      (else (cons (cadar syntax) (getInstanceVariableNames (cdr syntax)))))))
+
+; Function to get list of class instance initial values
+(define getClassInstanceVariableValues
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((eq? (caar syntax) 'function) null)
+      ((null? (cddar syntax)) (cons 'novalue (getClassInstanceVariableValues (cdr syntax))))
+      (else (cons (caddar syntax) (getClassInstanceVariableValues (cdr syntax)))))))
+
+; Function to get list of function names
+(define getClassFunctionNames
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((or (eq? (caar syntax) 'function) (eq? (caar syntax) 'static-function)) (cons (cadar syntax) (getClassFunctionNames (cdr syntax))))
+      (else (getClassFunctionNames (cdr syntax))))))
+
+; Function to get a list of function closures
+(define getClassFunctionClosures
+  (lambda (syntax)
+    (cond
+      ((null? syntax) null)
+      ((or (eq? (caar syntax) 'function) (eq? (caar syntax) 'static-function)) (cons (getFunctionClosure (car syntax)) (getClassFunctionClosures (cdr syntax))))
+      (else (getClassFunctionClosures (cdr syntax))))))
+
+
+
+(define createClassClosure
+  (lambda (syntax)
+    (cons (list (getSuperClassName syntax)) (cons (list (getInstanceVariableNames (getClassBody syntax)) (getClassInstanceVariableValues (getClassBody syntax))) (list (cons (getClassFunctionNames (getClassBody syntax)) (list (getClassFunctionClosures (getClassBody syntax)))))))))
+
+(define getClassBody
+  (lambda (syntax)
+    (cadddr syntax)))
+
+;------------------------
+; Functions to access elements of the class closure. 
+;------------------------
+
+; Function to lookup a class closure from the state.
+(define lookupClassClosure
+  (lambda (c state)
+    (lookupClassClosureHelper c (caadr state) (cadadr state))))
+
+; Helper function to lookup a class closure from the state.
+(define lookupClassClosureHelper
+  (lambda (c lis1 lis2)
+    (cond
+      ((eq? (car lis1) c) (car lis2))
+      (else (lookupClassClosureHelper c (cdr lis1) (cdr lis2))))))
+
+; Function to get variable lists from class closure
+(define lookupClassVarList
+  (lambda (closure)
+    (cadr closure)))
+
+; Function to get the superclass of a class closure.
+(define lookupSuperClass
+  (lambda (closure)
+    (cond
+      ((null? (car closure)) null)
+      (else (caar closure)))))
+
+; Function to get the function names from a class closure.
+;(define lookupFunctionNames
+ ; (lambda (closure)
+ ;   (cond
+    ;  ((null? (
+
+;------------------------
+; Functions to create an instance closure
+;------------------------
+
+; Function to get the Instance variable name. Syntax in the form: '(var a (new A))
+(define getInstanceName
+  (lambda (syntax)
+    (cadr syntax)))
+
+; Function to get the runtime type of a variable
+(define getRuntimeType
+  (lambda (syntax)
+    (car(cdaddr syntax))))
+
+
+; Function to create an instance closure. Syntax in the form of: '(var x (new X))
+(define getInstanceClosure
+  (lambda (syntax state)
+    (cons (cons (list (getInstanceName syntax)) (list (list (getRuntimeType syntax)))) (list (lookupClassVarList (lookupClassClosure (getRuntimeType syntax) state))))))
+
+
 
 ;------------------------
 ; Environment/State Functions
@@ -370,64 +480,7 @@
   (lambda (syntax)
     (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (get-func-name syntax)))))
 
-; Function to get the Instance variable names and value
 
-; Function to get the super class
-(define getSuperClassName
-  (lambda (syntax)
-    (cond
-      ((null? (caddr syntax)) '())
-      (else (car(cdaddr syntax))))))
-
-; Function to get list of class instance variables
-(define getInstanceVariableNames
-  (lambda (syntax)
-    (cond
-      ((null? syntax) null)
-      ((eq? (caar syntax) 'function) (getInstanceVariableNames (cdr syntax)))
-      (else (cons (cadar syntax) (getInstanceVariableNames (cdr syntax)))))))
-
-; Function to get list of class instance initial values
-(define getClassInstanceVariableValues
-  (lambda (syntax)
-    (cond
-      ((null? syntax) null)
-      ((eq? (caar syntax) 'function) null)
-      ((null? (cddar syntax)) (cons 'novalue (getClassInstanceVariableValues (cdr syntax))))
-      (else (cons (caddar syntax) (getClassInstanceVariableValues (cdr syntax)))))))
-
-; Function to get list of function names
-(define getClassFunctionNames
-  (lambda (syntax)
-    (cond
-      ((null? syntax) null)
-      ((eq? (caar syntax) 'function) (cons (cadar syntax) (getClassFunctionNames (cdr syntax))))
-      (else (getClassFunctionNames (cdr syntax))))))
-
-; Function to get a list of function closures
-(define getClassFunctionClosures
-  (lambda (syntax)
-    (cond
-      ((null? syntax) null)
-      ((eq? (caar syntax) 'function) (cons (getFunctionClosure (car syntax)) (getClassFunctionClosures (cdr syntax))))
-      (else (getClassFunctionClosures (cdr syntax))))))
-
-
-(define createClassClosure
-  (lambda (syntax)
-    (cons (list (getSuperClassName syntax)) (cons (list (getInstanceVariableNames (getClassBody syntax)) (getClassInstanceVariableValues (getClassBody syntax))) (list (cons (getClassFunctionNames (getClassBody syntax)) (list (getClassFunctionClosures (getClassBody syntax)))))))))
-
-(define getClassBody
-  (lambda (syntax)
-    (cadddr syntax)))
-
-(define getVarName
-  (lambda (syntax)
-    (cadr syntax)))
-
-(define getRuntimeType
-  (lambda (syntax)
-    (car (cdaddr syntax))))
 
 ; create an empty frame: a frame is two lists, the first are the variables and the second is the "store" of values
 (define newframe
