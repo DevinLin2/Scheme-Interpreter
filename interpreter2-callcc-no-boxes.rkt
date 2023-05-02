@@ -44,6 +44,14 @@
         state
         (interpret-outer-program (cdr statement-list) (interpret-outer-statement (car statement-list) state)))))
 
+(define newInterpret
+  (lambda (code classes)
+    (cond
+      ((null? code) classes)
+      ((eq? (caar code) 'class) (newInterpret (cdr code) (bindClassClosure (cadar code)(createClassClosure (car code)) classes)))
+      (else (newInterpret (cdr code))))))
+
+
 ; interprets a line (or function) of the outer layer of the program and adds the necessary bindings to the state
 ; We will reuse the interpret-declare and interpret-assign functions but pass in 'null for the continuations because there should not be any continuations being used in the initial outer interpret.
 ; We just want to parse the program not run it which will be the job of execute-main.
