@@ -403,10 +403,10 @@
 ; Functions to access elements of the class closure. 
 ;------------------------
 
-; Function to lookup a class closure from the state.
+; Function to lookup a class closure from the class closures.
 (define lookupClassClosure
-  (lambda (c state)
-    (lookupClassClosureHelper c (caadr state) (cadadr state))))
+  (lambda (c classes)
+    (lookupClassClosureHelper c (car classes) (cadr classes))))
 
 ; Helper function to lookup a class closure from the state.
 (define lookupClassClosureHelper
@@ -427,11 +427,21 @@
       ((null? (car closure)) null)
       (else (caar closure)))))
 
+
+
 ; Function to get the function names from a class closure.
-;(define lookupFunctionNames
- ; (lambda (closure)
- ;   (cond
-    ;  ((null? (
+(define lookupFunctionNames
+  (lambda (closure)
+    (cond
+      ((null? (cddr closure)) null)
+      (else (caaddr closure)))))
+
+; Function to get the function closures from a class closure.
+(define lookupFunctionClosures
+  (lambda (closure)
+    (cond
+      ((null? (cddr closure)) null)
+      (else (car(cdaddr closure))))))
 
 ;------------------------
 ; Functions to create an instance closure
@@ -447,17 +457,67 @@
   (lambda (syntax)
     (car(cdaddr syntax))))
 
-
-; Function to create an instance closure. Syntax in the form of: '(var x (new X))
 (define getInstanceClosure
-  (lambda (syntax state)
-    (cons (cons (list (getInstanceName syntax)) (list (list (getRuntimeType syntax)))) (list (lookupClassVarList (lookupClassClosure (getRuntimeType syntax) state))))))
+  (lambda (syntax classes)
+    (append (list (getInstanceName syntax) (getRuntimeType syntax)) (list (getInstanceVariablesList (getRuntimeType syntax) classes)))))
 
+(define getInstanceVariablesList
+  (lambda (runtimeType classes)
+    (lookupClassVarList (lookupClassClosure runtimeType classes))))
+
+;------------------------
+; Functions to Access and update members of an instance closure. 
+;------------------------
+
+(define lookupInstances
+  (lambda (state)
+    (caar state)))
+
+(define lookupInstanceClosures
+  (lambda (state)
+    (cadar state)))
+
+(define lookupInstanceClosure
+  (lambda (v state)
+    (cond
+     ((eq? (car (topframe state)) v) (topframe state))
+     (else (lookupInstanceClosure v (remainingframes state))))))
+
+; function to get the runtime type of an instance variable.
+(define lookupRuntimeType
+  (lambda (closure)
+    (cadr closure)))
 
 
 ;------------------------
 ; Environment/State Functions
 ;------------------------
+
+(define getClassNamesList
+  (lambda (classes)
+    (car classes)))
+
+(define getClassClosureList
+  (lambda (classes)
+    (cadr classes)))
+
+; A function to add a new class closure to the classes.
+(define bindClassClosure
+  (lambda (className closure classes)
+    (cons (addClassName className classes)(list (addClassClosure closure classes)))))
+
+(define addClassName
+  (lambda (className classes)
+    (append (getClassNamesList classes) (list className))))
+
+(define addClassClosure
+  (lambda (closure classes)
+    (append (getClassClosureList classes) (list closure))))
+
+; A function to add a new instance closure to the state.
+(define bindInstanceClosure
+  (lambda (closure state)
+    (cons closure state)))
 
 ; create a new empty environment
 (define newenvironment
@@ -474,6 +534,7 @@
   (lambda (syntax)
     (cadddr syntax)))
 
+
 ; Function to create a closure
 (define createClosure
   (lambda (syntax environment)
@@ -482,7 +543,7 @@
 ; Function to create a function closure
 (define getFunctionClosure
   (lambda (syntax)
-    (append (cons (getFormalParams syntax) (list (getFunctionBody syntax))) (list (get-func-name syntax)))))
+    (append (cons (append (getFormalParams syntax) '(this)) (list (getFunctionBody syntax))))))
 
 
 
